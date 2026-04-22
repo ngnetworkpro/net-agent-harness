@@ -4,7 +4,7 @@ from pydantic_ai.output import NativeOutput
 from pydantic_ai.providers.ollama import OllamaProvider
 
 from ..config import settings
-from ..models.changes import ChangeRequest
+from ..models.changes import PlannedChange
 from ..orchestration.run_context import RunContextData
 from ..tools.inventory_tools import lookup_inventory
 
@@ -16,16 +16,16 @@ model = OllamaModel(
 change_planner = Agent(
     model,
     deps_type=RunContextData,
-    output_type=NativeOutput(ChangeRequest),
+    output_type=NativeOutput(PlannedChange),
     system_prompt=(
         "You are a network change planner. "
         "Return only valid structured output matching the schema. "
-        "Do not use placeholder values like 'string', 'unknown', or example timestamps. "
+        "Do not use placeholder values like 'string', 'unknown', example timestamps, or fake IDs. "
         "If a field is not known, use null or an empty list where allowed. "
-        "Use the user's request text directly when appropriate. "
         "Use the inventory tool when the site is known. "
-        "Do not invent devices outside tool results."
-    )
+        "Do not invent devices outside tool results. "
+        "Keep the plan concise and operationally realistic."
+    ),
     retries=2,
 )
 
