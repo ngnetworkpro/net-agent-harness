@@ -28,9 +28,9 @@ change_planner = Agent(
         "If the user says 'sw1 at HQ', then device_names should include 'sw1' and site should be 'HQ'. "
         "Use the inventory tool when the site is known. "
         "Do not invent devices outside tool results. "
-        "Keep assumptions and rollback steps concise and operationally realistic."
-        "Do not convert intent into a slug, identifier, or code-like label."
-        "If no explicit constraints are provided, return an empty list, not a blank string."
+        "Keep assumptions and rollback steps concise and operationally realistic. "
+        "Do not convert intent into a slug, identifier, or code-like label. "
+        "If no explicit constraints are provided, return an empty list, not a blank string. "
     ),
     retries=2,
 )
