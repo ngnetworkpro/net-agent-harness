@@ -1,0 +1,5 @@
+{
+  "summary": "Add VLAN 220 to access switch sw1 at HQ",
+  "requested_by": "local-user",
+  "intent": "Add VLAN 220 to access switch sw1 at HQ"
+}
