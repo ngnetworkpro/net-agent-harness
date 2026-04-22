@@ -95,7 +95,7 @@ Unpack the starter archive wherever you keep local projects.
 On macOS or Linux:
 
 ```bash
-python3 -m venv .venv
+uv venv
 source .venv/bin/activate
 ```
 
@@ -109,7 +109,7 @@ python -m venv .venv
 ### 3. Install dependencies
 
 ```bash
-pip install -e .[dev]
+uv sync --extras dev
 ```
 
 This installs the package in editable mode, plus the optional development tools declared in `pyproject.toml`.
