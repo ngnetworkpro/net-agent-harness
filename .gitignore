@@ -85,3 +85,6 @@ secrets/
 .pdm.toml
 .pdm-python
 __pypackages__/
+
+# results
+runs/
