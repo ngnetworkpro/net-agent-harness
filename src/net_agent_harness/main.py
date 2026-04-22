@@ -6,7 +6,9 @@ from rich import print
 from .agents.change_planner import change_planner
 from .config import settings
 from .models.artifacts import ConfigRender
-from .models.changes import ChangeRequest
+from .models.changes import ChangeRequest, PlannedChange
+from .models.common import ArtifactMeta
+from datetime import UTC, datetime
 from .models.enums import RunStage
 from .orchestration.coordinator import StageCoordinator
 from .orchestration.run_context import RunContextData
@@ -48,10 +50,31 @@ def plan(request: str, operator: str = 'local-user'):
     )
     run_store.update_stage(run_id, 'plan', 'running')
     result = change_planner.run_sync(request, deps=deps)
-    artifact_path = artifact_store.save_model(run_id, 'change_request', result.output)
-    run_store.update_stage(run_id, 'plan', 'completed', artifact='change_request')
-    print({'run_id': run_id, 'artifact_path': str(artifact_path), 'output': result.output.model_dump(mode='json')})
+    planned = result.output
 
+    artifact = ChangeRequest(
+        meta=ArtifactMeta(
+            run_id=run_id,
+            artifact_id=f"change-request-{run_id}",
+            version=1,
+            created_at=datetime.now(UTC),
+            created_by=operator,
+        ),
+        scope=planned.scope,
+        requested_change=planned.requested_change,
+        risk=planned.risk,
+        assumptions=planned.assumptions,
+        dependencies=planned.dependencies,
+        rollback_plan=planned.rollback_plan,
+    )
+
+    artifact_path = artifact_store.save_model(run_id, 'change_request', artifact)
+    run_store.update_stage(run_id, 'plan', 'completed', artifact='change_request')
+    print({
+        'run_id': run_id,
+        'artifact_path': str(artifact_path),
+        'output': artifact.model_dump(mode='json')
+    })
 
 @app.command()
 def render(change_request_file: Path):
