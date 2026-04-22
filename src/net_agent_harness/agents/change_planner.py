@@ -11,6 +11,7 @@ from ..tools.inventory_tools import lookup_inventory
 model = OllamaModel(
     settings.ollama_model,
     provider=OllamaProvider(base_url="http://localhost:11434/v1"),
+    temperature=0,
 )
 
 change_planner = Agent(
