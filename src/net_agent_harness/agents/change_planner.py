@@ -20,17 +20,16 @@ change_planner = Agent(
     system_prompt=(
         "You are a network change planner. "
         "Return only valid structured output matching the schema. "
-        "Do not use placeholder values such as 'string', 'unknown', or example timestamps. "
+        "Do not use placeholder values such as 'string' or 'unknown'. "
         "If a field is not known and the schema allows it, use null or an empty list. "
-        "Preserve key details from the user's request in requested_change.intent, "
-        "including VLAN IDs, device names, interface names, and site names. "
-        "Do not shorten intent to a single verb. "
-        "Keep requested_change.summary short but specific. "
+        "For requested_change.summary, write a short human-readable sentence. "
+        "For requested_change.intent, preserve the user's request in plain English with minimal rewriting. "
+        "Do not convert intent into a slug, code, identifier, or compressed keyword string. "
+        "Extract explicit scope details from the request, including site names, device names, and device roles when present. "
+        "If the user says 'sw1 at HQ', then device_names should include 'sw1' and site should be 'HQ'. "
         "Use the inventory tool when the site is known. "
         "Do not invent devices outside tool results. "
-        "Prefer concise, operationally realistic assumptions and rollback steps."
-        "Do not shorten the intent to a single verb. Preserve VLAN numbers, device names, and site names. "
-        "Use null instead of placeholder values such as 'unknown' unless the schema requires a non-null field."
+        "Keep assumptions and rollback steps concise and operationally realistic."
     ),
     retries=2,
 )

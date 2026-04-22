@@ -4,7 +4,9 @@ from .enums import ChangeRisk
 
 
 class RequestedChange(BaseModel):
-    summary: str = Field(description="Short machine-friendly summary of the requested change")
+    summary: str = Field(
+        description="Short human-readable summary of the requested change, one sentence, not a slug"
+    )
     business_reason: str | None = Field(
         default=None,
         description="Why the change is needed; null if not stated"
@@ -18,14 +20,12 @@ class RequestedChange(BaseModel):
         description="Planned change window if provided; null if unknown"
     )
     intent: str = Field(
-        ...,
-        description="Copy the user's requested network change in plain English with minimal normalization; preserve details like VLAN IDs, device names, and location"
+        description="The user's requested network change in plain English; preserve important details like VLAN IDs, device names, and site names; do not convert to a slug or identifier"
     )
     constraints: list[str] = Field(
         default_factory=list,
-        description="Explicit constraints or guardrails from the request"
+        description="Explicit constraints or guardrails stated in the request"
     )
-
 
 class RollbackPlan(BaseModel):
     summary: str = Field(
