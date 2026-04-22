@@ -2,8 +2,7 @@ from pydantic_ai import Agent, RunContext
 from ..config import settings
 from ..models.changes import ChangeRequest
 from ..orchestration.run_context import RunContextData
-from ..tools.inventory_tools import get_mock_inventory
-
+from ..tools.inventory_tools import lookup_inventory
 
 change_planner = Agent(
     model=f"ollama:{settings.ollama_model}",
@@ -20,4 +19,4 @@ change_planner = Agent(
 @change_planner.tool
 async def get_inventory(ctx: RunContext[RunContextData], site: str):
     """Get inventory for a site to ground the change plan."""
-    return get_mock_inventory(ctx, site)
+    return lookup_inventory(ctx, site=site)
