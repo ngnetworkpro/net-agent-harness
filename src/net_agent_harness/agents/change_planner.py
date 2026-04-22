@@ -29,6 +29,8 @@ change_planner = Agent(
         "Use the inventory tool when the site is known. "
         "Do not invent devices outside tool results. "
         "Prefer concise, operationally realistic assumptions and rollback steps."
+        "Do not shorten the intent to a single verb. Preserve VLAN numbers, device names, and site names. "
+        "Use null instead of placeholder values such as 'unknown' unless the schema requires a non-null field."
     ),
     retries=2,
 )
