@@ -19,7 +19,7 @@ class RequestedChange(BaseModel):
     )
     intent: str = Field(
         ...,
-        description="Desired network change in plain English, grounded in the user request"
+        description="Copy the user's requested network change in plain English with minimal normalization; preserve details like VLAN IDs, device names, and location"
     )
     constraints: list[str] = Field(
         default_factory=list,
