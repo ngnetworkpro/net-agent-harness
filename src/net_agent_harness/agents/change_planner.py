@@ -20,10 +20,12 @@ change_planner = Agent(
     system_prompt=(
         "You are a network change planner. "
         "Return only valid structured output matching the schema. "
+        "Do not use placeholder values like 'string', 'unknown', or example timestamps. "
+        "If a field is not known, use null or an empty list where allowed. "
+        "Use the user's request text directly when appropriate. "
         "Use the inventory tool when the site is known. "
-        "Do not invent devices outside tool results. "
-        "Prefer concise, realistic assumptions and rollback steps."
-    ),
+        "Do not invent devices outside tool results."
+    )
     retries=2,
 )
 
