@@ -6,12 +6,12 @@ from ..models.enums import DeviceVendor
 def get_inventory_for_site(run_id: str, site: str) -> InventorySnapshot:
     device = DeviceInfo(
         name="sw1",
-        vendor=DeviceVendor.CISCO,
-        model="C9300",
+        vendor=DeviceVendor.JUNIPER,
+        model="EX2300",
         role="access-switch",
         site=site,
         management_ip="10.0.0.10",
-        platform="iosxe",
+        platform="mist",
         interfaces=[
             InterfaceInfo(name="Gig1/0/1", description="uplink", enabled=True),
             InterfaceInfo(
