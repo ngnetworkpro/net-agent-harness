@@ -49,7 +49,7 @@ def plan(request: str, operator: str = 'local-user'):
         model_name=settings.ollama_model,
     )
     run_store.update_stage(run_id, 'plan', 'running')
-    result = change_planner.run_sync(request, deps=deps)
+    result = change_planner.run_sync(request, deps=deps, model_settings={'temperature': 0.0})
     planned = result.output
 
     artifact = ChangeRequest(
