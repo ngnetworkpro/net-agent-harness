@@ -20,7 +20,8 @@ class RequestedChange(BaseModel):
         description="Planned change window if provided; null if unknown"
     )
     intent: str = Field(
-        description="The user's requested network change in plain English; preserve important details like VLAN IDs, device names, and site names; do not convert to a slug or identifier"
+        description="For requested_change.intent, preserve the user's request in plain English with minimal rewriting. "
+        "Do not convert it into a slug, code, identifier, or compressed keyword string."    
     )
     constraints: list[str] = Field(
         default_factory=list,
@@ -37,7 +38,7 @@ class RollbackPlan(BaseModel):
     )
     rollback_steps: list[str] = Field(
         default_factory=list,
-        description="Ordered rollback actions"
+        description="Include at least one concrete rollback step when the change affects a switch configuration."
     )
 
 
