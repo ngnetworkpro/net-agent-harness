@@ -20,12 +20,11 @@ class RequestedChange(BaseModel):
         description="Planned change window if provided; null if unknown"
     )
     intent: str = Field(
-        description="For requested_change.intent, preserve the user's request in plain English with minimal rewriting. "
-        "Do not convert it into a slug, code, identifier, or compressed keyword string."    
+    description="Preserve the user's requested change in plain English, keeping VLAN IDs, device names, and site names; do not normalize into a slug or identifier"
     )
     constraints: list[str] = Field(
         default_factory=list,
-        description="Explicit constraints or guardrails stated in the request"
+        description="Explicit constraints from the request; return an empty list if none are provided"
     )
 
 class RollbackPlan(BaseModel):

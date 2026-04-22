@@ -24,12 +24,13 @@ change_planner = Agent(
         "If a field is not known and the schema allows it, use null or an empty list. "
         "For requested_change.summary, write a short human-readable sentence. "
         "For requested_change.intent, preserve the user's request in plain English with minimal rewriting. "
-        "Do not convert intent into a slug, code, identifier, or compressed keyword string. "
         "Extract explicit scope details from the request, including site names, device names, and device roles when present. "
         "If the user says 'sw1 at HQ', then device_names should include 'sw1' and site should be 'HQ'. "
         "Use the inventory tool when the site is known. "
         "Do not invent devices outside tool results. "
         "Keep assumptions and rollback steps concise and operationally realistic."
+        "Do not convert intent into a slug, identifier, or code-like label."
+        "If no explicit constraints are provided, return an empty list, not a blank string."
     ),
     retries=2,
 )
