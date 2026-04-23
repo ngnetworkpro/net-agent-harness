@@ -1,6 +1,18 @@
 from enum import Enum
 
 
+class ChangeRisk(str, Enum):
+    low = "low"
+    medium = "medium"
+    high = "high"
+
+
+
+class TargetScope(str, Enum):
+    device = "device"
+    site = "site"
+    ambiguous = "ambiguous"
+
 class RunStage(str, Enum):
     INTAKE = "intake"
     DISCOVER = "discover"
