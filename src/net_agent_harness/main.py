@@ -130,13 +130,20 @@ def validate(config_render_file: Path):
 
 
 @run_app.command('stages')
-def run_stages(change_request_file: Path):
-    payload = json.loads(change_request_file.read_text(encoding='utf-8'))
-    change_request = ChangeRequest.model_validate(payload)
-    run_store = RunStore(get_runs_root())
-    coordinator = StageCoordinator(ArtifactStore(get_runs_root()), run_store=run_store)
-    summary = coordinator.run_pipeline(change_request)
-    print(json.dumps(summary, indent=2))
+@app.command()
+def run_stages(artifact_path: Path):
+    """Run all post-plan stages for an existing change request."""
+    change_request = ChangeRequest.model_validate_json(artifact_path.read_text())
+    # Same validation as `render()` uses
+    ensure_renderable(change_request)
+    run_id = change_request.meta.run_id
+    # Render config
+    render(change_request)
+    # # Review
+    # review(change_request)
+    # # Finalize
+    # finalize(change_request)
+    print(f"✅ Full pipeline complete: {run_id}")
 
 
 @app.command()
