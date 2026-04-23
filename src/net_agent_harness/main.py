@@ -25,6 +25,22 @@ app.add_typer(run_app, name='run')
 def get_runs_root() -> Path:
     return settings.runs_dir
 
+def ensure_renderable(change_request: ChangeRequest) -> None:
+    if change_request.clarifications_needed:
+        msg = "; ".join(change_request.clarifications_needed)
+        raise typer.BadParameter(
+            f"Cannot render config: clarification required: {msg}"
+        )
+
+    if change_request.target_scope == "ambiguous":
+        raise typer.BadParameter(
+            "Cannot render config: request target is ambiguous"
+        )
+
+    if not change_request.resolved_targets:
+        raise typer.BadParameter(
+            "Cannot render config: no concrete targets were resolved from inventory"
+        )
 
 @app.command()
 def plan(request: str, operator: str = 'local-user'):
@@ -61,6 +77,9 @@ def plan(request: str, operator: str = 'local-user'):
             created_by=operator,
         ),
         scope=planned.scope,
+        target_scope=planned.target_scope,
+        resolved_targets=planned.resolved_targets,
+        clarifications_needed=planned.clarifications_needed,
         requested_change=planned.requested_change,
         risk=planned.risk,
         assumptions=planned.assumptions,
@@ -80,6 +99,8 @@ def plan(request: str, operator: str = 'local-user'):
 def render(change_request_file: Path):
     payload = json.loads(change_request_file.read_text(encoding='utf-8'))
     change_request = ChangeRequest.model_validate(payload)
+    ensure_renderable(change_request)
+
     artifact_store = ArtifactStore(get_runs_root())
     run_store = RunStore(get_runs_root())
     run_store.update_stage(change_request.meta.run_id, 'render', 'running')
@@ -87,7 +108,6 @@ def render(change_request_file: Path):
     artifact_path = artifact_store.save_model(change_request.meta.run_id, 'config_render', render_result)
     run_store.update_stage(change_request.meta.run_id, 'render', 'completed', artifact='config_render')
     print({'run_id': change_request.meta.run_id, 'artifact_path': str(artifact_path), 'output': render_result.model_dump(mode='json')})
-
 
 @app.command()
 def validate(config_render_file: Path):
