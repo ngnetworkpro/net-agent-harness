@@ -11,7 +11,8 @@ class ArtifactMeta(BaseModel):
 
 
 class ScopeRef(BaseModel):
-    site: str = Field(..., description="Site name explicitly mentioned in the request, such as HQ")
-    region: str | None = Field(default=None, description="Region name if mentioned; null if not stated")
-    device_names: list[str] = Field(default_factory=list, description="Device names explicitly mentioned in the request, such as sw1")
-    device_roles: list[str] = Field(default_factory=list, description="Device roles explicitly mentioned in the request or strongly implied, such as access-switch")
+    site: str | None = Field(default=None, description="Site name explicitly mentioned, e.g. HQ")
+    region: str | None = Field(default=None, description="Region explicitly mentioned, if any")
+    device_names: list[str] = Field(default_factory=list, description="Explicit device names, e.g. sw1")
+    device_roles: list[str] = Field(default_factory=list, description="Explicit device roles, e.g. access switch")
+    requested_role: str | None = Field(default=None, description="Primary role phrase if the user requests a role-based target")
