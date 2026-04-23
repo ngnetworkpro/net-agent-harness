@@ -1,4 +1,5 @@
 import json
+from typing import Any
 import uuid
 from pathlib import Path
 import typer
@@ -96,11 +97,16 @@ def plan(request: str, operator: str = 'local-user'):
     })
 
 @app.command()
-def render(change_request_file: Path):
-    payload = json.loads(change_request_file.read_text(encoding='utf-8'))
-    change_request = ChangeRequest.model_validate(payload)
-    ensure_renderable(change_request)
+def render(change_request_file_or_obj: Any):
+    """Render config from change request (file or object)."""
+    if isinstance(change_request_file_or_obj, Path):
+        change_request = ChangeRequest.model_validate_json(
+            change_request_file_or_obj.read_text(encoding='utf-8')
+        )
+    else:
+        change_request = change_request_file_or_obj
 
+    ensure_renderable(change_request)
     artifact_store = ArtifactStore(get_runs_root())
     run_store = RunStore(get_runs_root())
     run_store.update_stage(change_request.meta.run_id, 'render', 'running')
@@ -110,9 +116,14 @@ def render(change_request_file: Path):
     print({'run_id': change_request.meta.run_id, 'artifact_path': str(artifact_path), 'output': render_result.model_dump(mode='json')})
 
 @app.command()
-def validate(config_render_file: Path):
-    payload = json.loads(config_render_file.read_text(encoding='utf-8'))
-    config_render = ConfigRender.model_validate(payload)
+def validate(config_render_file_or_obj: Any):
+    """Validate config from change request (file or object)."""
+    if isinstance(config_render_file_or_obj, Path):
+        payload = json.loads(config_render_file_or_obj.read_text(encoding='utf-8'))
+        config_render = ConfigRender.model_validate(payload)
+    else:
+        config_render = config_render_file_or_obj
+
     artifact_store = ArtifactStore(get_runs_root())
     run_store = RunStore(get_runs_root())
     run_store.update_stage(config_render.meta.run_id, 'validate', 'running')
@@ -139,8 +150,8 @@ def run_stages(artifact_path: Path):
     run_id = change_request.meta.run_id
     # Render config
     render(change_request)
-    # # Review
-    # review(change_request)
+    # Review
+    validate(change_request)
     # # Finalize
     # finalize(change_request)
     print(f"✅ Full pipeline complete: {run_id}")
