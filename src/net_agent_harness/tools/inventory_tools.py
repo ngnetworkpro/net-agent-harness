@@ -5,6 +5,9 @@ from ..adapters.netbox_adapter import build_netbox_adapter_from_settings
 from ..orchestration.run_context import RunContextData
 
 
+ELIGIBLE_SITE_ROLES = {"access", "access-switch", "switch"}
+
+
 def _mock_inventory_snapshot(site: str | None = None, device_name: str | None = None) -> dict:
     if hasattr(mock_inventory_adapter, "get_mock_inventory_snapshot"):
         return mock_inventory_adapter.get_mock_inventory_snapshot(
@@ -40,73 +43,42 @@ def _mock_inventory_snapshot(site: str | None = None, device_name: str | None = 
     }
 
 
-def get_mock_inventory(ctx: RunContext[RunContextData], site: str) -> dict:
-    run_id = getattr(getattr(ctx, "deps", None), "run_id", "mock-run")
-
-    if hasattr(mock_inventory_adapter, "get_inventory_for_site"):
-        snapshot = mock_inventory_adapter.get_inventory_for_site(
-            run_id=run_id,
-            site=site,
-        )
-        return snapshot.model_dump(mode="json")
-
-    return _mock_inventory_snapshot(site=site)
-
-
 def _normalize_device(item: dict) -> dict:
     primary = item.get("primary_ip4") or item.get("primary_ip") or {}
     return {
         "id": item.get("id"),
         "name": item.get("name"),
-        "site": (item.get("site") or {}).get("name"),
+        "site": (item.get("site") or {}).get("name") if isinstance(item.get("site"), dict) else item.get("site"),
         "status": (item.get("status") or {}).get("value")
-        or (item.get("status") or {}).get("label"),
-        "role": (item.get("role") or {}).get("name"),
+        if isinstance(item.get("status"), dict)
+        else item.get("status"),
+        "role": (item.get("role") or {}).get("name")
+        if isinstance(item.get("role"), dict)
+        else item.get("role"),
         "platform": (item.get("platform") or {}).get("name")
-        if item.get("platform")
-        else None,
-        "primary_ip": primary.get("address") if isinstance(primary, dict) else None,
+        if isinstance(item.get("platform"), dict)
+        else item.get("platform"),
+        "primary_ip": primary.get("address") if isinstance(primary, dict) else primary,
         "source": "netbox",
     }
 
 
-def _normalize_interface(item: dict) -> dict:
+def _normalize_resolved_target(item: dict) -> dict:
     return {
-        "id": item.get("id"),
         "name": item.get("name"),
-        "type": (item.get("type") or {}).get("label")
-        if isinstance(item.get("type"), dict)
-        else item.get("type"),
-        "enabled": item.get("enabled"),
-        "mtu": item.get("mtu"),
-        "description": item.get("description"),
-        "mode": (item.get("mode") or {}).get("value")
-        if isinstance(item.get("mode"), dict)
-        else item.get("mode"),
-        "untagged_vlan": (
-            (item.get("untagged_vlan") or {}).get("vid")
-            if isinstance(item.get("untagged_vlan"), dict)
-            else None
-        ),
-        "tagged_vlans": [
-            v.get("vid") for v in item.get("tagged_vlans", []) if isinstance(v, dict)
-        ],
+        "site": item.get("site"),
+        "role": item.get("role"),
+        "platform": item.get("platform"),
+        "primary_ip": item.get("primary_ip"),
     }
 
 
-def _normalize_ip(item: dict) -> dict:
-    assigned = item.get("assigned_object") or {}
-    return {
-        "id": item.get("id"),
-        "address": item.get("address"),
-        "family": (item.get("family") or {}).get("value")
-        if isinstance(item.get("family"), dict)
-        else item.get("family"),
-        "status": (item.get("status") or {}).get("value")
-        or (item.get("status") or {}).get("label"),
-        "dns_name": item.get("dns_name"),
-        "interface": assigned.get("name") if isinstance(assigned, dict) else None,
-    }
+def _role_matches(role: str | None, allowed_roles: set[str] | None) -> bool:
+    if not allowed_roles:
+        return True
+    if not role:
+        return False
+    return role.strip().lower() in {r.lower() for r in allowed_roles}
 
 
 def lookup_inventory(
@@ -127,6 +99,61 @@ def lookup_inventory(
         }
 
     return _mock_inventory_snapshot(site=site, device_name=device_name)
+
+
+def resolve_targets(
+    ctx: RunContext[RunContextData],
+    site: str | None = None,
+    device_name: str | None = None,
+    allowed_roles: list[str] | None = None,
+) -> dict:
+    inventory = lookup_inventory(ctx, site=site, device_name=device_name)
+    allowed = set(allowed_roles or [])
+
+    results = []
+    for item in inventory.get("results", []):
+        if device_name and item.get("name") != device_name:
+            continue
+
+        if site and item.get("site") != site:
+            continue
+
+        if allowed and not _role_matches(item.get("role"), allowed):
+            continue
+
+        results.append(_normalize_resolved_target(item))
+
+    return {
+        "source": inventory.get("source"),
+        "count": len(results),
+        "results": results,
+    }
+
+
+def resolve_site_targets(
+    ctx: RunContext[RunContextData],
+    site: str,
+    allowed_roles: list[str] | None = None,
+) -> dict:
+    return resolve_targets(
+        ctx,
+        site=site,
+        device_name=None,
+        allowed_roles=allowed_roles or sorted(ELIGIBLE_SITE_ROLES),
+    )
+
+
+def resolve_device_target(
+    ctx: RunContext[RunContextData],
+    site: str | None,
+    device_name: str,
+) -> dict:
+    return resolve_targets(
+        ctx,
+        site=site,
+        device_name=device_name,
+        allowed_roles=None,
+    )
 
 
 def lookup_device_context(
@@ -167,11 +194,47 @@ def lookup_device_context(
     return {
         "source": "netbox",
         "device": device,
-        "interfaces": [
-            _normalize_interface(item)
-            for item in interfaces_payload.get("results", [])
-        ],
-        "ip_addresses": [
-            _normalize_ip(item) for item in ips_payload.get("results", [])
+        "interfaces": interfaces_payload.get("results", []),
+        "ip_addresses": ips_payload.get("results", []),
+    }
+
+def _normalize_interface(item: dict) -> dict:
+    return {
+        "id": item.get("id"),
+        "name": item.get("name"),
+        "type": (item.get("type") or {}).get("label")
+        if isinstance(item.get("type"), dict)
+        else item.get("type"),
+        "enabled": item.get("enabled"),
+        "mtu": item.get("mtu"),
+        "description": item.get("description"),
+        "mode": (item.get("mode") or {}).get("value")
+        if isinstance(item.get("mode"), dict)
+        else item.get("mode"),
+        "untagged_vlan": (
+            (item.get("untagged_vlan") or {}).get("vid")
+            if isinstance(item.get("untagged_vlan"), dict)
+            else None
+        ),
+        "tagged_vlans": [
+            v.get("vid") for v in item.get("tagged_vlans", []) if isinstance(v, dict)
         ],
     }
+
+
+def _normalize_ip(item: dict) -> dict:
+    assigned = item.get("assigned_object") or {}
+    return {
+        "id": item.get("id"),
+        "address": item.get("address"),
+        "family": (item.get("family") or {}).get("value")
+        if isinstance(item.get("family"), dict)
+        else item.get("family"),
+        "status": (item.get("status") or {}).get("value")
+        or (item.get("status") or {}).get("label"),
+        "dns_name": item.get("dns_name"),
+        "interface": assigned.get("name") if isinstance(assigned, dict) else None,
+    }
+
+
+
