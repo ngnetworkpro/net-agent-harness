@@ -6,7 +6,7 @@ from pydantic_ai.providers.ollama import OllamaProvider
 from ..config import settings
 from ..models.changes import PlannedChange
 from ..orchestration.run_context import RunContextData
-from ..tools.inventory_tools import lookup_inventory
+from ..tools.inventory_tools import lookup_inventory, resolve_device_target, resolve_site_targets
 
 model = OllamaModel(
     settings.ollama_model,
@@ -26,10 +26,14 @@ change_planner = Agent(
         "Write requested_change.intent in plain English and preserve important details from the user's request, including VLAN IDs, device names, and site names. "
         "Do not convert intent into a slug, identifier, or code-like label. "
         "Extract explicit scope details from the request, including site names, device names, and device roles when present. "
-        "If the user says 'sw1 at HQ', then device_names should include 'sw1' and site should be 'HQ'. "
-        "If no explicit constraints are provided, return an empty list. "
+        "Classify target_scope as device, site, or ambiguous. "
+        "If a device is explicitly named, target_scope should be device. "
+        "If a site is explicitly named and no device is named, target_scope should be site. "
+        "If the request cannot be safely targeted, target_scope should be ambiguous and clarifications_needed should explain what is missing. "
         "Use the inventory tool when the site is known. "
         "Do not invent devices outside tool results. "
+        "Populate resolved_targets only with devices returned from inventory. "
+        "Always return a rollback_plan object. "
         "Keep assumptions and rollback steps concise and operationally realistic."
     ),
     retries=2,
@@ -39,3 +43,12 @@ change_planner = Agent(
 @change_planner.tool
 async def get_inventory(ctx: RunContext[RunContextData], site: str):
     return lookup_inventory(ctx, site=site)
+
+@change_planner.tool
+async def get_site_targets(ctx: RunContext[RunContextData], site: str):
+    return resolve_site_targets(ctx, site=site)
+
+
+@change_planner.tool
+async def get_device_target(ctx: RunContext[RunContextData], site: str | None, device_name: str):
+    return resolve_device_target(ctx, site=site, device_name=device_name)
