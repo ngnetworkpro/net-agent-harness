@@ -2,7 +2,25 @@
 
 Personal lab project for a network-engineering agent harness focused on safe, structured change planning.
 
-This repository is intentionally designed as a **personal prototype first**. The initial goal is to prove the harness shape, artifact contracts, and local-model workflow before connecting to any real network systems. The first version is read-mostly and uses mock inventory data by default.[web:18][web:26][web:55]
+## Project Goal
+
+Build a local, model-backed harness that can take a plain-English network change request and walk it through a structured, multi-stage workflow — planning, config rendering, and validation — without ever touching live infrastructure. The goal is to prove the harness shape, typed artifact contracts, and local-model workflow in a safe prototype before any real network systems are introduced.
+
+The longer-term vision is a harness that supports network-engineering workflows such as change planning, inventory/topology discovery, config rendering, validation and compliance checks, incident summarization, and (much later) tightly controlled execution. The current version starts with one small vertical slice so each layer can be tested end to end before the system grows more complex.
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Language | Python 3.11+ |
+| Agent framework | [PydanticAI](https://docs.pydantic.dev/latest/concepts/pydantic_ai/) |
+| Data validation | [Pydantic v2](https://docs.pydantic.dev/) / [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) |
+| Local model inference | [Ollama](https://ollama.com/) (default model: `llama3.1:8b`) |
+| CLI | [Typer](https://typer.tiangolo.com/) + [Rich](https://rich.readthedocs.io/) |
+| Optional inventory | [NetBox](https://netboxlabs.com/) (read-only REST adapter) |
+| Package management | [uv](https://github.com/astral-sh/uv) |
+| Testing | [pytest](https://pytest.org/) + pytest-cov |
+| Linting / type checking | [Ruff](https://docs.astral.sh/ruff/) + [mypy](https://mypy-lang.org/) |
 
 ## Current scope
 
@@ -13,21 +31,7 @@ The starter version currently does six things:
 - Supports an optional read-only NetBox-backed inventory adapter
 - Renders a candidate `ConfigRender` artifact from a saved change request
 - Validates that rendered candidate config into a `ValidationReport` artifact
-- Stops before any execution against live infrastructure[web:61][web:44][web:56][web:26]
-
-That keeps the project aligned with a safe prototype path while still exercising the important architecture decisions: typed outputs, tool calling, local model use, and narrow workflow stages.[web:18][web:26][web:55]
-
-## Why this exists
-
-The longer-term idea is a harness that could support network-engineering workflows such as:
-- change planning,
-- inventory/topology discovery,
-- config rendering,
-- validation and compliance checks,
-- incident summarization,
-- and, much later, tightly controlled execution.
-
-The initial repo does **not** attempt all of that yet. It starts with one small vertical slice so the workflow can be tested end to end before the system grows more complex.[web:18][web:82]
+- Stops before any execution against live infrastructure
 
 ## Initial architecture
 
@@ -37,9 +41,9 @@ The repo follows an artifact-first structure:
 - `tools/` contains narrow, typed functions the agent may call
 - `adapters/` isolates integrations such as Ollama or future NetBox/Nornir/NAPALM clients
 - `orchestration/` is reserved for the run coordinator and stage machine
-- `policies/` is reserved for approvals, scope checks, and future guardrails[web:18][web:61][web:67]
+- `policies/` is reserved for approvals, scope checks, and future guardrails
 
-This layout is intended to keep orchestration and policy in application code rather than hiding critical behavior inside prompts alone.[web:18][web:82]
+This layout keeps orchestration and policy in application code rather than hiding critical behavior inside prompts alone.
 
 ## Starter contents
 
@@ -49,7 +53,7 @@ The current starter includes:
 - typed models for `ChangeRequest`, `InventorySnapshot`, `ConfigRender`, and `ValidationReport`
 - a mock inventory adapter returning a small sample device set
 - a CLI command for generating a structured plan artifact
-- placeholder packages for future stages and integrations[web:18][web:26][web:61]
+- placeholder packages for future stages and integrations
 
 ## Repository layout
 
@@ -80,9 +84,9 @@ net-agent-harness/
 Recommended local environment:
 - Python 3.11+
 - Ollama installed and running locally
-- at least one local model available for structured generation[web:55][web:44]
+- at least one local model available for structured generation
 
-The starter project currently defaults to `llama3.1:8b` in configuration, but that can be changed later depending on what runs best on your machine.[web:55]
+The starter project currently defaults to `llama3.1:8b` in configuration, but that can be changed later depending on what runs best on your machine.
 
 ## Getting started
 
@@ -116,7 +120,7 @@ This installs the package in editable mode, plus the optional development tools 
 
 ### 4. Start Ollama
 
-Make sure Ollama is installed and the local service is running. Ollama supports structured outputs and local model inference, which is why it is a good fit for this prototype.[web:55][web:44]
+Make sure Ollama is installed and the local service is running. Ollama supports structured outputs and local model inference, which is why it is a good fit for this prototype.
 
 ### 5. Pull a local model
 
@@ -134,7 +138,7 @@ If you want to use a different model, create a local `.env` file from `.env.exam
 net-agent plan "Add VLAN 220 to access switch sw1 at HQ"
 ```
 
-If the agent run succeeds, it should print the run ID, the persisted artifact path, and a JSON representation of a `ChangeRequest` artifact. That output is validated against the declared Pydantic model before it is returned, and the run metadata plus artifact are written under `runs/<run_id>/`.[web:26][web:18][web:107]
+If the agent run succeeds, it should print the run ID, the persisted artifact path, and a JSON representation of a `ChangeRequest` artifact. That output is validated against the declared Pydantic model before it is returned, and the run metadata plus artifact are written under `runs/<run_id>/`.
 
 You can then render a candidate config artifact from that saved plan:
 
@@ -142,7 +146,7 @@ You can then render a candidate config artifact from that saved plan:
 net-agent render runs/<run_id>/change_request.json
 ```
 
-That command reads the saved `ChangeRequest`, validates it, and writes `runs/<run_id>/config_render.json`.[web:26][web:56]
+That command reads the saved `ChangeRequest`, validates it, and writes `runs/<run_id>/config_render.json`.
 
 You can then validate the rendered candidate:
 
@@ -150,7 +154,7 @@ You can then validate the rendered candidate:
 net-agent validate runs/<run_id>/config_render.json
 ```
 
-That writes `runs/<run_id>/validation_report.json` with a structured status, checks run, findings, and an `approved_for_execution` flag.[web:26]
+That writes `runs/<run_id>/validation_report.json` with a structured status, checks run, findings, and an `approved_for_execution` flag.
 
 You can also run the post-plan stages together:
 
@@ -158,9 +162,9 @@ You can also run the post-plan stages together:
 net-agent run stages runs/<run_id>/change_request.json
 ```
 
-That command runs the render and validation stages in sequence and writes a `run_summary.json` artifact for the run. Typer supports command groups and nested subcommands cleanly, which makes this a good point to introduce a small stage runner.[web:121][web:124]
+That command runs the render and validation stages in sequence and writes a `run_summary.json` artifact for the run. Typer supports command groups and nested subcommands cleanly, which makes this a good point to introduce a small stage runner.
 
-Run metadata is now also updated stage-by-stage in `run.json`, including `current_stage`, overall `status`, `updated_at`, and a `stage_history` array. That makes each run directory more useful for debugging and later observability work.[web:107][web:111]
+Run metadata is now also updated stage-by-stage in `run.json`, including `current_stage`, overall `status`, `updated_at`, and a `stage_history` array. That makes each run directory more useful for debugging and later observability work.
 
 ## Example output shape
 
@@ -200,26 +204,22 @@ A successful planning run should resemble this shape:
 }
 ```
 
-The exact values will vary by model, but the top-level schema should remain stable because the agent uses a typed output model.[web:26][web:44]
+The exact values will vary by model, but the top-level schema should remain stable because the agent uses a typed output model.
 
 ## What the starter actually does
 
-At the moment, the project is intentionally simple:
+At the moment, the project is intentionally simple. Key source files:
 
-When `NET_AGENT_INVENTORY_SOURCE=netbox`, inventory lookups go through the adapter interface and call the NetBox device endpoint using query parameters such as `site`, `name`, and `limit`. NetBox documents token auth for the REST API and supports filtering list endpoints via query parameters.[web:143][web:150]
-
-The adapter now also supports read-only device-context expansion by calling the device, interface, and IP address endpoints. In practice, that means the harness can fetch a matched device plus interface and IP context without introducing any write operations.[web:143][web:163]
-- `main.py` exposes the CLI via Typer and persists run output
-- `change_planner.py` defines the first planning agent
-- `config_render_agent.py` reserves the next agent stage for model-backed rendering
-- `inventory_tools.py` exposes a mock inventory tool
-- `config_tools.py` contains a deterministic stub renderer for candidate config output
-- `mock_inventory_adapter.py` returns a tiny synthetic inventory snapshot
-- `netbox_adapter.py` provides an optional read-only REST adapter for NetBox-backed inventory lookups
-- `inventory_tools.py` can now return either a simple device list or a richer device-context view with interfaces and IP addresses
-- `config.py` loads configuration from environment variables and `.env`
-- `services/run_store.py` and `services/artifact_store.py` persist run metadata and artifacts
-- the models under `models/` define the artifact contracts[web:18][web:61][web:107][web:56]
+- `main.py` — exposes the CLI via Typer and persists run output
+- `change_planner.py` — defines the first planning agent
+- `config_render_agent.py` — reserves the next agent stage for model-backed rendering
+- `inventory_tools.py` — exposes a mock inventory tool; can return a simple device list or a richer device-context view with interfaces and IP addresses
+- `config_tools.py` — contains a deterministic stub renderer for candidate config output
+- `mock_inventory_adapter.py` — returns a tiny synthetic inventory snapshot
+- `netbox_adapter.py` — optional read-only REST adapter for NetBox-backed inventory lookups (enabled via `NET_AGENT_INVENTORY_SOURCE=netbox`)
+- `config.py` — loads configuration from environment variables and `.env`
+- `services/run_store.py` and `services/artifact_store.py` — persist run metadata and artifacts
+- `models/` — defines the artifact contracts
 
 This is enough to validate the basic local-agent loop:
 1. receive a request,
@@ -227,7 +227,7 @@ This is enough to validate the basic local-agent loop:
 3. return a structured `ChangeRequest`,
 4. convert that artifact into a candidate `ConfigRender`,
 5. validate the render into a structured `ValidationReport`,
-6. keep the system safe by avoiding live execution.[web:18][web:26][web:55][web:56]
+6. keep the system safe by avoiding live execution.
 
 ## Running tests
 
@@ -251,7 +251,7 @@ The current project should remain inside these boundaries:
 - no broad shell execution,
 - no company-sensitive data in prompts or fixtures.
 
-This is important because network changes carry operational risk, and the value of the first prototype is proving workflow correctness rather than proving autonomy.[web:55][web:67]
+This is important because network changes carry operational risk, and the value of the first prototype is proving workflow correctness rather than proving autonomy.
 
 ## Recommended next steps
 
@@ -261,7 +261,7 @@ A sensible build order for the next few chunks is:
 3. Add planner/renderer use of richer device-context lookups when the request implies interface-level work
 4. Add artifact indexes or summaries per run beyond JSON files alone
 5. Add richer policy and approval hooks
-6. Keep execution disabled until the earlier stages are reliable[web:18][web:26][web:67]
+6. Keep execution disabled until the earlier stages are reliable
 
 ## Troubleshooting
 
@@ -271,19 +271,19 @@ Make sure the virtual environment is activated and that `pip install -e .[dev]` 
 
 ### The model call fails
 
-Check that Ollama is running and that the configured model exists locally. If needed, run `ollama list` and confirm the configured model name is present.[web:55]
+Check that Ollama is running and that the configured model exists locally. If needed, run `ollama list` and confirm the configured model name is present.
 
 ### The output is invalid or inconsistent
 
-Smaller local models may vary in quality. This is expected in the prototype phase. The typed schema still helps because invalid output is caught at the application boundary instead of silently flowing through the system.[web:26][web:44]
+Smaller local models may vary in quality. This is expected in the prototype phase. The typed schema still helps because invalid output is caught at the application boundary instead of silently flowing through the system.
 
 ### The agent invents devices
 
-That is one reason the inventory tool exists. The next iterations should tighten prompts and rely more heavily on tool-grounded data rather than free-form assumptions.[web:61][web:18]
+That is one reason the inventory tool exists. The next iterations should tighten prompts and rely more heavily on tool-grounded data rather than free-form assumptions.
 
 ## Notes on future integrations
 
-The repository already includes placeholder adapter modules for systems such as NetBox, Nornir, and NAPALM, but they are intentionally empty in the starter. The safer sequence is to keep using mock data first, then introduce read-only integrations, then later consider any execution path behind explicit approvals and scope controls.[web:67][web:18]
+The repository already includes placeholder adapter modules for systems such as NetBox, Nornir, and NAPALM, but they are intentionally empty in the starter. The safer sequence is to keep using mock data first, then introduce read-only integrations, then later consider any execution path behind explicit approvals and scope controls.
 
 ## Development philosophy
 
@@ -292,4 +292,4 @@ The project is being built in small chunks on purpose:
 - keep each change small enough to survive interruptions,
 - and validate one layer at a time.
 
-That approach is especially useful for agent systems because it separates model quality problems from architecture problems early.[web:18][web:82]
+That approach is especially useful for agent systems because it separates model quality problems from architecture problems early.
