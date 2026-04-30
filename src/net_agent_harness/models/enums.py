@@ -45,4 +45,24 @@ class DeviceVendor(str, Enum):
     ARISTA = "arista"
     PALO_ALTO = "palo_alto"
     FORTINET = "fortinet"
+    MERAKI = "meraki"
     OTHER = "other"
+
+class SwitchportMode(str, Enum):
+    ACCESS = "access"
+    TRUNK = "trunk"
+
+class AllowedVlansMode(str, Enum):
+    ALL = "all"
+    LIST = "list"
+    NONE = "none"
+
+class InterfaceType(str, Enum):
+    SWITCHPORT = "switchport"
+    ROUTED = "routed"
+
+class SpanningTreeMode(str, Enum):
+    EDGE = "edge"
+    TRUNK = "trunk"
+    EDGE_TRUNK = "edge trunk"
+    NONE = "none"
