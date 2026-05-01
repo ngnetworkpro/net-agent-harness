@@ -7,11 +7,11 @@ def get_mock_inventory_snapshot(site: str | None = None, device_name: str | None
     
     results = []
     for device in snapshot.devices:
-        if device_name and device["name"] != device_name:
+        if device_name and device.name != device_name:
             continue
-        if site and device["site"] != site:
+        if site and device.site != site:
             continue
-        results.append(device)
+        results.append(device.model_dump(mode="json"))
     
     return {
         "source": "mock",

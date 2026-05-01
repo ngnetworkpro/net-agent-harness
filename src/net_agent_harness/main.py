@@ -1,5 +1,4 @@
 import json
-from typing import Any
 import uuid
 from pathlib import Path
 import typer
@@ -96,16 +95,10 @@ def plan(request: str, operator: str = 'local-user'):
         'output': artifact.model_dump(mode='json')
     })
 
-@app.command()
-def render(change_request_file_or_obj: Any):
-    """Render config from change request (file or object)."""
-    if isinstance(change_request_file_or_obj, Path):
-        change_request = ChangeRequest.model_validate_json(
-            change_request_file_or_obj.read_text(encoding='utf-8')
-        )
-    else:
-        change_request = change_request_file_or_obj
+# ── Internal helpers (no Typer annotation constraints) ───────────────────────
 
+def _run_render(change_request: ChangeRequest) -> None:
+    """Core render logic, callable from CLI or programmatically."""
     ensure_renderable(change_request)
     artifact_store = ArtifactStore(get_runs_root())
     run_store = RunStore(get_runs_root())
@@ -115,15 +108,9 @@ def render(change_request_file_or_obj: Any):
     run_store.update_stage(change_request.meta.run_id, 'render', 'completed', artifact='config_render')
     print({'run_id': change_request.meta.run_id, 'artifact_path': str(artifact_path), 'output': render_result.model_dump(mode='json')})
 
-@app.command()
-def validate(config_render_file_or_obj: Any):
-    """Validate config from change request (file or object)."""
-    if isinstance(config_render_file_or_obj, Path):
-        payload = json.loads(config_render_file_or_obj.read_text(encoding='utf-8'))
-        config_render = ConfigRender.model_validate(payload)
-    else:
-        config_render = config_render_file_or_obj
 
+def _run_validate(config_render: ConfigRender) -> None:
+    """Core validate logic, callable from CLI or programmatically."""
     artifact_store = ArtifactStore(get_runs_root())
     run_store = RunStore(get_runs_root())
     run_store.update_stage(config_render.meta.run_id, 'validate', 'running')
@@ -140,18 +127,39 @@ def validate(config_render_file_or_obj: Any):
     print({'run_id': config_render.meta.run_id, 'artifact_path': str(artifact_path), 'output': validation_result.model_dump(mode='json')})
 
 
+# ── CLI commands (Typer-safe: only concrete scalar/Path types) ────────────────
+
+@app.command()
+def render(change_request_file: Path):
+    """Render config from a change-request JSON file."""
+    change_request = ChangeRequest.model_validate_json(
+        change_request_file.read_text(encoding='utf-8')
+    )
+    _run_render(change_request)
+
+
+@app.command()
+def validate(config_render_file: Path):
+    """Validate config from a config-render JSON file."""
+    payload = json.loads(config_render_file.read_text(encoding='utf-8'))
+    config_render = ConfigRender.model_validate(payload)
+    _run_validate(config_render)
+
+
 @run_app.command('stages')
 @app.command()
 def run_stages(artifact_path: Path):
     """Run all post-plan stages for an existing change request."""
     change_request = ChangeRequest.model_validate_json(artifact_path.read_text())
-    # Same validation as `render()` uses
     ensure_renderable(change_request)
     run_id = change_request.meta.run_id
     # Render config
-    render(change_request)
-    # Review
-    validate(change_request)
+    _run_render(change_request)
+    # Validate
+    # Note: run_stages passes a ChangeRequest here, so we need to build the render first
+    # validate operates on a ConfigRender; for the pipeline, reload from disk
+    render_artifact = get_runs_root() / run_id / 'config_render.json'
+    _run_validate(ConfigRender.model_validate_json(render_artifact.read_text()))
     # # Finalize
     # finalize(change_request)
     print(f"✅ Full pipeline complete: {run_id}")
