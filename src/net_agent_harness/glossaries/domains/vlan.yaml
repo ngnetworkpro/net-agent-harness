@@ -1,0 +1,40 @@
+version: "1.0"
+domain: vlan
+description: "VLAN provisioning, trunking, and access-port assignment."
+
+terms:
+  - name: vlan_id
+    definition: "IEEE 802.1Q numeric VLAN identifier (1–4094)."
+  - name: trunk
+    definition: "A switchport mode that carries multiple VLANs tagged with 802.1Q headers."
+  - name: access
+    definition: "A switchport mode that assigns a port to exactly one untagged VLAN."
+  - name: native_vlan
+    definition: "The VLAN whose frames are sent untagged on a trunk port (default 1)."
+  - name: allowed_vlans
+    definition: "The set of VLANs permitted to traverse a trunk port."
+
+intents:
+  - name: provision_vlan_trunk
+    description: "Create a VLAN and allow it on one or more trunk interfaces."
+    required_fields: [vlan_id, target_interfaces, mode]
+  - name: provision_vlan_access
+    description: "Assign a VLAN to one or more access interfaces."
+    required_fields: [vlan_id, target_interfaces, mode]
+  - name: check_vlan_state
+    description: "Inspect existing VLAN presence on a device without making changes."
+    required_fields: [vlan_id]
+
+examples:
+  - user: "Add VLAN 200 to trunk port Gi0/1 on sw1 at HQ"
+    normalized_intent: "provision_vlan_trunk"
+    vlan_id: 200
+    target_interfaces: ["Gi0/1"]
+    mode: trunk
+    device: sw1
+    site: HQ
+  - user: "Make sure VLAN 10 is on all access ports at Branch1"
+    normalized_intent: "provision_vlan_access"
+    vlan_id: 10
+    mode: access
+    site: Branch1

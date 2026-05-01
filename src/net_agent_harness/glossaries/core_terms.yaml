@@ -1,0 +1,14 @@
+version: "1.0"
+terms:
+  - name: intent
+    definition: "The normalized, machine-readable description of what the operator wants the network to do."
+  - name: no_op
+    definition: "A plan decision where the current state already satisfies the intent — no changes required."
+  - name: apply
+    definition: "A plan decision where one or more configuration changes must be made."
+  - name: blocked
+    definition: "A plan decision where the request cannot proceed safely due to a resolvable conflict or missing data."
+  - name: resolved_target
+    definition: "A concrete network device returned by an inventory query."
+  - name: site
+    definition: "A physical or logical location grouping network devices."

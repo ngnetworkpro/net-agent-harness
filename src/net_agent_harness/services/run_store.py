@@ -1,5 +1,5 @@
 import json
-from datetime import UTC, datetime
+from datetime import timezone, datetime
 from pathlib import Path
 from ..models.enums import RunStage
 
@@ -53,4 +53,4 @@ class RunStore:
 
     @staticmethod
     def _now() -> str:
-        return datetime.now(UTC).isoformat()
+        return datetime.now(timezone.utc).isoformat()

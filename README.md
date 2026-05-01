@@ -37,10 +37,11 @@ The starter version currently does six things:
 
 The repo follows an artifact-first structure:
 - `models/` defines the schemas the system relies on
+- `glossaries/` contains modular YAML files (core terms + domains) that ground the agents.
 - `agents/` contains focused agent implementations
 - `tools/` contains narrow, typed functions the agent may call
 - `adapters/` isolates integrations such as Ollama or future NetBox/Nornir/NAPALM clients
-- `orchestration/` is reserved for the run coordinator and stage machine
+- `orchestration/` handles routing, context loading, and stage progression.
 - `policies/` is reserved for approvals, scope checks, and future guardrails
 
 This layout keeps orchestration and policy in application code rather than hiding critical behavior inside prompts alone.
@@ -211,8 +212,10 @@ The exact values will vary by model, but the top-level schema should remain stab
 At the moment, the project is intentionally simple. Key source files:
 
 - `main.py` — exposes the CLI via Typer and persists run output
-- `change_planner.py` — defines the first planning agent
-- `config_render_agent.py` — reserves the next agent stage for model-backed rendering
+- `orchestration/intent_router.py` — deterministically routes plain English to domains (`vlan`, `acl`, `routing`)
+- `orchestration/domain_loader.py` — securely merges core terms and specific domain YAMLs into a unified context
+- `agents/change_planner.py` — defines the first planning agent, with a dynamically injected system prompt containing only the relevant domain glossaries
+- `agents/config_render_agent.py` — reserves the next agent stage for model-backed rendering
 - `inventory_tools.py` — exposes a mock inventory tool; can return a simple device list or a richer device-context view with interfaces and IP addresses
 - `config_tools.py` — contains a deterministic stub renderer for candidate config output
 - `mock_inventory_adapter.py` — returns a tiny synthetic inventory snapshot

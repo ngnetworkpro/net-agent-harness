@@ -21,17 +21,60 @@ class InterfaceInfo(BaseModel):
     allowed_vlans_mode: Optional[AllowedVlansMode] = None
 
     @model_validator(mode="after")
-    def _default_trunk_native_vlan(self) -> "InterfaceInfo":
-        """Apply the 802.1Q default native VLAN (1) to trunk interfaces.
+    def _apply_mode_semantics(self) -> "InterfaceInfo":
+        """Enforce the field contract implied by switchport mode.
 
-        native_vlan is left as None for non-trunk ports so consumers can
-        distinguish "not applicable" from "explicitly unset".  For trunks,
-        omitting native_vlan in source data is normal — the switch uses VLAN 1
-        unless told otherwise — so we mirror that here rather than forcing
-        callers to always spell it out.
+        Access ports
+        ------------
+        - ``access_vlan`` is required — an access port with no VLAN assignment
+          is not a valid configuration.
+        - ``native_vlan``, ``allowed_vlans_mode``, and ``vlan_ids`` are trunk
+          concepts and are silently cleared so serialised output stays clean.
+
+        Trunk ports
+        -----------
+        - ``native_vlan`` defaults to 1 (IEEE 802.1Q default) when omitted;
+          real switches behave the same way, so we mirror that rather than
+          forcing callers to spell it out every time.
+        - ``allowed_vlans_mode`` defaults to ``ALL`` when omitted — the most
+          permissive trunk posture and the common vendor default.
+        - ``vlan_ids`` must be non-empty when ``allowed_vlans_mode`` is ``LIST``;
+          an explicit list with no entries is meaningless and caught here.
+        - ``access_vlan`` is a layer-2 access concept and is cleared.
         """
-        if self.mode == SwitchportMode.TRUNK and self.native_vlan is None:
-            self.native_vlan = _TRUNK_DEFAULT_NATIVE_VLAN
+        if self.mode == SwitchportMode.ACCESS:
+            if self.access_vlan is None:
+                raise ValueError(
+                    f"Interface '{self.name}': access_vlan is required for ACCESS mode ports."
+                )
+            # Trunk fields have no meaning on an access port — clear them so
+            # downstream consumers don't have to second-guess which fields apply.
+            self.native_vlan = None
+            self.allowed_vlans_mode = None
+            self.vlan_ids = []
+
+        elif self.mode == SwitchportMode.TRUNK:
+            # access_vlan is an access-port concept; clear it on trunks.
+            self.access_vlan = None
+
+            # Apply 802.1Q default native VLAN when the caller omitted it.
+            if self.native_vlan is None:
+                self.native_vlan = _TRUNK_DEFAULT_NATIVE_VLAN
+
+            # Default to the most permissive posture when allowed_vlans_mode
+            # was not specified — mirrors common vendor behaviour.
+            if self.allowed_vlans_mode is None:
+                self.allowed_vlans_mode = AllowedVlansMode.ALL
+
+            # When the caller explicitly requested a VLAN list, that list must
+            # contain at least one entry — an empty explicit list is a config
+            # error (distinct from the intentional [] used with ALL/NONE).
+            if self.allowed_vlans_mode == AllowedVlansMode.LIST and not self.vlan_ids:
+                raise ValueError(
+                    f"Interface '{self.name}': vlan_ids must be non-empty when "
+                    "allowed_vlans_mode is LIST."
+                )
+
         return self
 
 class VlanInfo(BaseModel):

@@ -8,7 +8,7 @@ from .config import settings
 from .models.artifacts import ConfigRender
 from .models.changes import ChangeRequest, PlannedChange
 from .models.common import ArtifactMeta
-from datetime import UTC, datetime
+from datetime import timezone, datetime
 from .models.enums import RunStage
 from .orchestration.coordinator import StageCoordinator
 from .orchestration.run_context import RunContextData
@@ -16,6 +16,9 @@ from .services.artifact_store import ArtifactStore
 from .services.run_store import RunStore
 from .tools.config_tools import build_stub_config_render
 from .tools.validation_tools import validate_config_render
+
+from .orchestration.intent_router import route_intent
+from .orchestration.domain_loader import load_domain_context
 
 app = typer.Typer(help='Network agent harness prototype')
 run_app = typer.Typer(help='Run end-to-end stage pipelines')
@@ -26,6 +29,18 @@ def get_runs_root() -> Path:
     return settings.runs_dir
 
 def ensure_renderable(change_request: ChangeRequest) -> None:
+    # Short-circuit: if the planner already evaluated this as a no_op,
+    # there is nothing to render. Exit cleanly rather than failing on
+    # missing targets, which would be misleading.
+    if (
+        change_request.plan_decision is not None
+        and change_request.plan_decision.decision.value == "no_op"
+    ):
+        reason = change_request.plan_decision.reason
+        raise typer.Exit(
+            message=f"[no_op] Nothing to render: {reason}"
+        )
+
     if change_request.clarifications_needed:
         msg = "; ".join(change_request.clarifications_needed)
         raise typer.BadParameter(
@@ -44,6 +59,16 @@ def ensure_renderable(change_request: ChangeRequest) -> None:
 
 @app.command()
 def plan(request: str, operator: str = 'local-user'):
+    domain = route_intent(request)
+    
+    if domain == "generic":
+        raise typer.BadParameter(
+            "Could not determine the network domain from your request. "
+            "Please explicitly mention 'vlan', 'acl', 'routing', etc., or provide more context."
+        )
+        
+    domain_context = load_domain_context(domain)
+    
     run_id = f'run-{uuid.uuid4().hex[:8]}'
     runs_root = get_runs_root()
     run_store = RunStore(runs_root)
@@ -56,6 +81,8 @@ def plan(request: str, operator: str = 'local-user'):
         model_name=settings.ollama_model,
         require_approval_for_execute=settings.require_approval_for_execute,
         inventory_source=settings.inventory_source,
+        domain=domain,
+        domain_context=domain_context,
     )
 
     run_store.create_run(
@@ -73,7 +100,7 @@ def plan(request: str, operator: str = 'local-user'):
             run_id=run_id,
             artifact_id=f"change-request-{run_id}",
             version=1,
-            created_at=datetime.now(UTC),
+            created_at=datetime.now(timezone.utc),
             created_by=operator,
         ),
         scope=planned.scope,
@@ -85,6 +112,7 @@ def plan(request: str, operator: str = 'local-user'):
         assumptions=planned.assumptions,
         dependencies=planned.dependencies,
         rollback_plan=planned.rollback_plan,
+        plan_decision=planned.plan_decision,  # carry the no_op/apply/blocked decision forward
     )
 
     artifact_path = artifact_store.save_model(run_id, 'change_request', artifact)

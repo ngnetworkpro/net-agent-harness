@@ -66,3 +66,8 @@ class SpanningTreeMode(str, Enum):
     TRUNK = "trunk"
     EDGE_TRUNK = "edge trunk"
     NONE = "none"
+
+class PlanDecisionType(str, Enum):
+    APPLY = "apply"
+    NO_OP = "no_op"
+    BLOCKED = "blocked"

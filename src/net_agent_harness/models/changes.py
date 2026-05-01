@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from .common import ArtifactMeta, ScopeRef
-from .enums import ChangeRisk, TargetScope
+from .enums import ChangeRisk, TargetScope, PlanDecisionType
 
 
 class ResolvedTarget(BaseModel):
@@ -50,6 +50,27 @@ class RollbackPlan(BaseModel):
     )
 
 
+class VlanDiff(BaseModel):
+    vlans_to_create: list[int] = Field(
+        default_factory=list,
+        description="VLAN IDs that must be created on the target device",
+    )
+    ports_to_update: list[str] = Field(
+        default_factory=list,
+        description="Interface names whose VLAN configuration must be updated",
+    )
+
+
+class PlanDecision(BaseModel):
+    decision: PlanDecisionType = Field(
+        description="apply — changes required; no_op — already satisfied; blocked — cannot proceed"
+    )
+    reason: str = Field(
+        description="Human-readable explanation of the decision"
+    )
+    diff: VlanDiff
+
+
 class PlannedChange(BaseModel):
     scope: ScopeRef
     target_scope: TargetScope = Field(
@@ -68,6 +89,15 @@ class PlannedChange(BaseModel):
     assumptions: list[str] = Field(default_factory=list)
     dependencies: list[str] = Field(default_factory=list)
     rollback_plan: RollbackPlan
+    plan_decision: PlanDecision | None = Field(
+        default=None,
+        description=(
+            "Structured decision produced by evaluate_vlan_intent. "
+            "no_op means the intent is already satisfied and no config changes are needed. "
+            "apply means changes must be rendered. "
+            "blocked means the request cannot proceed safely."
+        ),
+    )
 
 
 class ChangeRequest(BaseModel):
@@ -81,3 +111,7 @@ class ChangeRequest(BaseModel):
     assumptions: list[str] = Field(default_factory=list)
     dependencies: list[str] = Field(default_factory=list)
     rollback_plan: RollbackPlan
+    plan_decision: PlanDecision | None = Field(
+        default=None,
+        description="Structured no_op/apply/blocked decision carried through from the planner.",
+    )
