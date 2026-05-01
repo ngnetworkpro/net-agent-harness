@@ -1,4 +1,6 @@
+# Architecture
 
+```
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                         Operator / Network Engineer                      │
 │     CLI | Web UI | Chat UI | Ticket trigger | Change request API       │
@@ -65,3 +67,5 @@
 │  Source of truth | lab/sandbox | device fleet | telemetry/log stores    │
 │  Git-backed config repo | approval records | secrets boundary           │
 └──────────────────────────────────────────────────────────────────────────┘
+
+```
