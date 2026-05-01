@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from ..models.enums import RunStage
 from ..models.domain import DomainContext
-
+from .intent_router import RouteResult
 
 @dataclass
 class RunContextData:
@@ -11,5 +11,5 @@ class RunContextData:
     model_name: str
     require_approval_for_execute: bool = True
     inventory_source: str = "mock"
-    domain: str = "generic"
+    route_result: RouteResult | None = None
     domain_context: DomainContext | None = None

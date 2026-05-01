@@ -3,6 +3,10 @@ import importlib.resources
 import yaml
 from ..models.domain import DomainContext, TermEntry, IntentSpec, FewShotExample
 
+class DomainLoadError(Exception):
+    """Raised when a domain context cannot be loaded."""
+    pass
+
 @lru_cache(maxsize=16)
 def load_domain_context(domain: str) -> DomainContext:
     try:
@@ -14,8 +18,8 @@ def load_domain_context(domain: str) -> DomainContext:
     try:
         domain_text = importlib.resources.files("net_agent_harness.glossaries.domains").joinpath(f"{domain}.yaml").read_text()
         domain_data = yaml.safe_load(domain_text)
-    except FileNotFoundError:
-        domain_data = {"domain": domain, "description": "No specific context available.", "terms": [], "intents": [], "examples": []}
+    except FileNotFoundError as exc:
+        raise DomainLoadError(f"Domain context not found for '{domain}'") from exc
 
     terms = [TermEntry(**t) for t in core.get("terms", [])] + \
             [TermEntry(**t) for t in domain_data.get("terms", [])]

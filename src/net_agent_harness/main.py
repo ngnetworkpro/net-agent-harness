@@ -18,7 +18,7 @@ from .tools.config_tools import build_stub_config_render
 from .tools.validation_tools import validate_config_render
 
 from .orchestration.intent_router import route_intent
-from .orchestration.domain_loader import load_domain_context
+from .orchestration.domain_loader import load_domain_context, DomainLoadError
 
 app = typer.Typer(help='Network agent harness prototype')
 run_app = typer.Typer(help='Run end-to-end stage pipelines')
@@ -41,6 +41,13 @@ def ensure_renderable(change_request: ChangeRequest) -> None:
             message=f"[no_op] Nothing to render: {reason}"
         )
 
+    if (
+        change_request.plan_decision is not None
+        and change_request.plan_decision.decision.value == "blocked"
+    ):
+        reason = change_request.plan_decision.reason
+        raise typer.BadParameter(f"Cannot render config: blocked: {reason}")
+
     if change_request.clarifications_needed:
         msg = "; ".join(change_request.clarifications_needed)
         raise typer.BadParameter(
@@ -59,15 +66,18 @@ def ensure_renderable(change_request: ChangeRequest) -> None:
 
 @app.command()
 def plan(request: str, operator: str = 'local-user'):
-    domain = route_intent(request)
+    route = route_intent(request)
     
-    if domain == "generic":
+    if route.domain in {"generic", "unknown"} or route.confidence < 0.65:
         raise typer.BadParameter(
-            "Could not determine the network domain from your request. "
+            "Could not confidently determine the network domain from your request. "
             "Please explicitly mention 'vlan', 'acl', 'routing', etc., or provide more context."
         )
         
-    domain_context = load_domain_context(domain)
+    try:
+        domain_context = load_domain_context(route.domain)
+    except DomainLoadError as exc:
+        raise typer.Exit(code=2) from exc
     
     run_id = f'run-{uuid.uuid4().hex[:8]}'
     runs_root = get_runs_root()
@@ -81,7 +91,7 @@ def plan(request: str, operator: str = 'local-user'):
         model_name=settings.ollama_model,
         require_approval_for_execute=settings.require_approval_for_execute,
         inventory_source=settings.inventory_source,
-        domain=domain,
+        route_result=route,
         domain_context=domain_context,
     )
 
