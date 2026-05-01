@@ -1,14 +1,31 @@
 version: "1.0"
+domain: "core"
 terms:
   - name: intent
-    definition: "The normalized, machine-readable description of what the operator wants the network to do."
+    definition: "A normalized, machine-readable description of the desired network outcome."
+  - name: decision
+    definition: "The planner outcome indicating whether a request should proceed, stop, or require clarification."
   - name: no_op
-    definition: "A plan decision where the current state already satisfies the intent — no changes required."
+    definition: "A planner decision indicating the current state already satisfies the desired intent."
   - name: apply
-    definition: "A plan decision where one or more configuration changes must be made."
+    definition: "A planner decision indicating one or more changes are required to satisfy the desired intent."
   - name: blocked
-    definition: "A plan decision where the request cannot proceed safely due to a resolvable conflict or missing data."
-  - name: resolved_target
-    definition: "A concrete network device returned by an inventory query."
+    definition: "A planner decision indicating the request cannot safely proceed because of ambiguity, policy conflict, or missing required data."
   - name: site
-    definition: "A physical or logical location grouping network devices."
+    definition: "A physical or logical location used to group network resources."
+  - name: device
+    definition: "A managed network node, such as a switch, router, firewall, or access point."
+  - name: resolved_target
+    definition: "A concrete device, interface, or site object selected from inventory for a planned change."
+  - name: interface
+    definition: "A managed network attachment point on a device."
+  - name: current_state
+    definition: "The observed configuration or operational data used to compare against desired intent."
+  - name: desired_state
+    definition: "The target configuration or behavior required to satisfy the intent."
+  - name: diff
+    definition: "The minimal set of changes required to move current state to desired state."
+  - name: ip_address
+    definition: "An IP address associated with a network object such as an interface, loopback, or VLAN interface."
+  - name: prefix_length
+    definition: "The number of significant bits in the network prefix of an IP address."

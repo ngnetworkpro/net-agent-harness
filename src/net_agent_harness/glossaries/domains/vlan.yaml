@@ -4,37 +4,91 @@ description: "VLAN provisioning, trunking, and access-port assignment."
 
 terms:
   - name: vlan_id
-    definition: "IEEE 802.1Q numeric VLAN identifier (1–4094)."
+    definition: "An IEEE 802.1Q VLAN identifier in the range 1-4094."
   - name: trunk
-    definition: "A switchport mode that carries multiple VLANs tagged with 802.1Q headers."
-  - name: access
-    definition: "A switchport mode that assigns a port to exactly one untagged VLAN."
+    definition: "A switchport mode that carries traffic for multiple VLANs, typically using 802.1Q tags."
+  - name: access_vlan
+    definition: "The VLAN assigned to an access interface for untagged traffic."
   - name: native_vlan
-    definition: "The VLAN whose frames are sent untagged on a trunk port (default 1)."
+    definition: "The VLAN associated with untagged traffic on a trunk interface; many platforms default this to VLAN 1."
   - name: allowed_vlans
-    definition: "The set of VLANs permitted to traverse a trunk port."
+    definition: "The set of VLANs permitted to traverse a trunk interface."
+  - name: svi
+    definition: "A Layer 3 interface representing a VLAN on a multilayer device."
+  - name: switchport_mode
+    definition: "The forwarding mode of a switch interface, typically access or trunk."
 
 intents:
-  - name: provision_vlan_trunk
-    description: "Create a VLAN and allow it on one or more trunk interfaces."
-    required_fields: [vlan_id, target_interfaces, mode]
-  - name: provision_vlan_access
-    description: "Assign a VLAN to one or more access interfaces."
-    required_fields: [vlan_id, target_interfaces, mode]
-  - name: check_vlan_state
-    description: "Inspect existing VLAN presence on a device without making changes."
+  - name: create_vlan
+    description: "Create a VLAN on one or more target devices."
     required_fields: [vlan_id]
+  - name: delete_vlan
+    description: "Delete a VLAN from one or more target devices."
+    required_fields: [vlan_id]
+  - name: update_trunk_allowed_vlans
+    description: "Add, remove, or replace VLAN membership on one or more trunk interfaces."
+    required_fields: [vlan_id, target_interfaces]
+  - name: set_native_vlan
+    description: "Set the native VLAN on one or more trunk interfaces."
+    required_fields: [vlan_id, target_interfaces]
+  - name: set_access_vlan
+    description: "Assign a VLAN to one or more access interfaces."
+    required_fields: [vlan_id, target_interfaces]
+  - name: create_or_update_svi
+    description: "Create or update a switched virtual interface for a VLAN."
+    required_fields: [vlan_id, ip_address, prefix_length]
+  - name: provision_vlan_trunk
+    description: "Composite intent: create a VLAN if needed and allow it on one or more trunk interfaces."
+    required_fields: [vlan_id, target_interfaces]
+  - name: check_vlan_state
+    description: "Inspect VLAN presence or VLAN-related interface state without making changes."
+    required_fields: [vlan_id]
+
+aliases:
+  "create vlan": create_vlan
+  "delete vlan": delete_vlan
+  "put port in vlan": set_access_vlan
+  "assign port to vlan": set_access_vlan
+  "set access vlan": set_access_vlan
+  "tag vlan on trunk": update_trunk_allowed_vlans
+  "allow vlan on trunk": update_trunk_allowed_vlans
+  "permit vlan on uplink": update_trunk_allowed_vlans
+  "configure native vlan": set_native_vlan
+  "set native vlan": set_native_vlan
+  "create default gateway for vlan": create_or_update_svi
+  "create svi for vlan": create_or_update_svi
+
+rules:
+  - "If the request mentions trunk, uplink, tagged, or allowed VLANs, prefer a trunk-related intent."
+  - "If the request mentions a port being placed in a VLAN without mentioning trunking, prefer set_access_vlan."
+  - "If the request mentions a gateway IP, routed VLAN interface, or default gateway for a VLAN, consider create_or_update_svi."
+  - "If the request implies both VLAN creation and trunk allowance, consider the composite intent provision_vlan_trunk."
+  - "Do not assume a VLAN already exists unless current state or inventory confirms it."
 
 examples:
   - user: "Add VLAN 200 to trunk port Gi0/1 on sw1 at HQ"
     normalized_intent: "provision_vlan_trunk"
     vlan_id: 200
     target_interfaces: ["Gi0/1"]
-    mode: trunk
-    device: sw1
-    site: HQ
-  - user: "Make sure VLAN 10 is on all access ports at Branch1"
-    normalized_intent: "provision_vlan_access"
+    device: "sw1"
+    site: "HQ"
+
+  - user: "Put port Gi0/24 in VLAN 10 on sw1 at Branch1"
+    normalized_intent: "set_access_vlan"
     vlan_id: 10
-    mode: access
-    site: Branch1
+    target_interfaces: ["Gi0/24"]
+    device: "sw1"
+    site: "Branch1"
+
+  - user: "Set the native VLAN to 99 on uplink Gi0/1 at HQ"
+    normalized_intent: "set_native_vlan"
+    vlan_id: 99
+    target_interfaces: ["Gi0/1"]
+    site: "HQ"
+
+  - user: "Create a gateway 10.20.30.1/24 for VLAN 30 on fw1"
+    normalized_intent: "create_or_update_svi"
+    vlan_id: 30
+    ip_address: "10.20.30.1"
+    prefix_length: 24
+    device: "sw1"
