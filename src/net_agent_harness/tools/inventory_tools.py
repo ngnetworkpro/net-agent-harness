@@ -69,7 +69,7 @@ def _normalize_resolved_target(item: dict) -> ResolvedTarget:
         site=item.get("site"),
         role=item.get("role"),
         platform=item.get("platform"),
-        primary_ip=item.get("primary_ip"),
+        primary_ip=item.get("primary_ip") or item.get("management_ip"),
     )
 
 
