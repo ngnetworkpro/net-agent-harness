@@ -16,6 +16,7 @@ from .services.artifact_store import ArtifactStore
 from .services.run_store import RunStore
 from .tools.config_tools import build_stub_config_render
 from .tools.validation_tools import validate_config_render
+from .tools.inventory_tools import resolve_from_scope
 
 from .orchestration.intent_router import route_intent
 from .orchestration.domain_loader import load_domain_context, DomainLoadError

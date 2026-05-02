@@ -1,4 +1,4 @@
-from net_agent_harness.models.changes import ChangeRequest, RequestedChange
+from net_agent_harness.models.changes import ChangeRequest, RequestedChange, RollbackPlan
 from net_agent_harness.models.common import ArtifactMeta, ScopeRef
 from net_agent_harness.models.enums import ChangeRisk
 from net_agent_harness.tools.config_tools import build_stub_config_render
@@ -12,6 +12,12 @@ def test_build_stub_config_render():
             summary="Add VLAN 220",
             requested_by="tester",
             intent="Add VLAN 220 to access switch sw1 at HQ",
+        ),
+        target_scope="device",
+        rollback_plan=RollbackPlan(
+            summary="Revert",
+            trigger_conditions=["Error"],
+            rollback_steps=["Undo"]
         ),
         risk=ChangeRisk.LOW,
     )

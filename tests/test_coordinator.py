@@ -1,4 +1,4 @@
-from net_agent_harness.models.changes import ChangeRequest, RequestedChange
+from net_agent_harness.models.changes import ChangeRequest, RequestedChange, RollbackPlan
 from net_agent_harness.models.common import ArtifactMeta, ScopeRef
 from net_agent_harness.models.enums import ChangeRisk
 from net_agent_harness.orchestration.coordinator import StageCoordinator
@@ -15,6 +15,12 @@ def test_stage_coordinator_pipeline(tmp_path):
             summary="Add VLAN 220",
             requested_by="tester",
             intent="Add VLAN 220 to access switch sw1 at HQ",
+        ),
+        target_scope="device",
+        rollback_plan=RollbackPlan(
+            summary="Revert",
+            trigger_conditions=["Error"],
+            rollback_steps=["Undo"]
         ),
         risk=ChangeRisk.LOW,
     )

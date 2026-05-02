@@ -1,5 +1,5 @@
 from pathlib import Path
-from net_agent_harness.models.changes import ChangeRequest, RequestedChange
+from net_agent_harness.models.changes import ChangeRequest, RequestedChange, RollbackPlan
 from net_agent_harness.models.common import ArtifactMeta, ScopeRef
 from net_agent_harness.models.enums import ChangeRisk
 from net_agent_harness.services.artifact_store import ArtifactStore
@@ -14,6 +14,12 @@ def test_save_model(tmp_path: Path):
             summary="Add VLAN 220",
             requested_by="tester",
             intent="Add VLAN 220 to sw1",
+        ),
+        target_scope="device",
+        rollback_plan=RollbackPlan(
+            summary="Revert",
+            trigger_conditions=["Error"],
+            rollback_steps=["Undo"]
         ),
         risk=ChangeRisk.LOW,
     )
