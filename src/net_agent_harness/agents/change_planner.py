@@ -1,38 +1,17 @@
 import os
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.models.ollama import OllamaModel
 from pydantic_ai.output import NativeOutput
-from pydantic_ai.providers.ollama import OllamaProvider
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.openai import OpenAIProvider
 
-from ..config import settings
 from ..models.changes import PlannedChange
 from ..orchestration.run_context import RunContextData
 from ..tools.inventory_tools import lookup_inventory, resolve_device_target, resolve_site_targets
 from ..tools.vlan_state import compute_vlan_diff
 
-api_key = os.environ.get("NVIDIA_API_KEY") or settings.nvidia_api_key
+from ..agents.agent_factory import build_agent
 
-if api_key:
-    model = OpenAIChatModel(
-        settings.nvidia_model,
-        provider=OpenAIProvider(
-            base_url="https://integrate.api.nvidia.com/v1",
-            api_key=api_key,
-        )
-    )
-else:
-    model = OllamaModel(
-        settings.ollama_model,
-        provider=OllamaProvider(base_url="http://localhost:11434/v1"),
-    )
-
-change_planner = Agent(
-    model,
+change_planner = build_agent(
     deps_type=RunContextData,
     output_type=NativeOutput(PlannedChange),
-    retries=2,
 )
 
 @change_planner.system_prompt

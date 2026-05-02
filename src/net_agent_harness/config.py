@@ -10,7 +10,10 @@ class Settings(BaseSettings):
         env_file_encoding='utf-8',
         extra='ignore',
     )
-
+    
+    # config.py additions
+    provider: str | None = None           # e.g. "nvidia", "ollama", "openai"
+    openai_model: str = "gpt-4o-mini"     # used only if provider="openai"
     ollama_model: str = 'qwen3.5:9b'
     nvidia_api_key: str | None = None
     nvidia_model: str = 'minimaxai/minimax-m2.7'
