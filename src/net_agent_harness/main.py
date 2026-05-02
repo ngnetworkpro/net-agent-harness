@@ -75,21 +75,21 @@ def plan(request: str, operator: str = 'local-user'):
         typer.secho(f"Error executing plan: {e}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
 
-async def _async_plan(request: str, operator: str = 'local-user'):
+async def _async_plan(request: str, operator: str = "local-user"):
     route = route_intent(request)
-    
+
     if route.domain in {"generic", "unknown"} or route.confidence < 0.65:
         raise typer.BadParameter(
             "Could not confidently determine the network domain from your request. "
             "Please explicitly mention 'vlan', 'acl', 'routing', etc., or provide more context."
         )
-        
+
     try:
         domain_context = load_domain_context(route.domain)
     except DomainLoadError as exc:
         raise typer.Exit(code=2) from exc
-    
-    run_id = f'run-{uuid.uuid4().hex[:8]}'
+
+    run_id = f"run-{uuid.uuid4().hex[:8]}"
     runs_root = get_runs_root()
     run_store = RunStore(runs_root)
     artifact_store = ArtifactStore(runs_root)
@@ -111,17 +111,19 @@ async def _async_plan(request: str, operator: str = 'local-user'):
         stage=RunStage.PLAN,
         model_name=settings.ollama_model,
     )
-    run_store.update_stage(run_id, 'plan', 'running')
-    
+
+    run_store.update_stage(run_id, "plan", "running", message="Evaluating configuration intent...")
+
     planned = await run_agent_with_spinner(
         agent=change_planner,
         prompt=request,
         deps=deps,
-        model_settings={'temperature': 0.0},
-        message="Evaluating configuration intent..."
+        model_settings={"temperature": 0.0},
+        message="Evaluating configuration intent...",
     )
 
-    # --- Authoritative target resolution ---
+    run_store.update_stage(run_id, "plan", "running", message="Resolving inventory scope...")
+
     resolved_targets = resolve_from_scope(
         scope=planned.scope,
         inventory_source=settings.inventory_source,
@@ -133,14 +135,20 @@ async def _async_plan(request: str, operator: str = 'local-user'):
             f"site={planned.scope.site or 'none'}, "
             f"roles={planned.scope.device_roles or planned.scope.requested_role or 'none'}"
         )
-        run_store.update_stage(run_id, 'plan', 'blocked',
-                            reason=f"No inventory match for scope: {scope_summary}")
+
+        run_store.update_stage(
+            run_id,
+            "plan",
+            "blocked",
+            reason=f"No inventory match for scope: {scope_summary}",
+        )
         raise typer.BadParameter(
             f"Could not resolve target devices. "
             f"Scope was: {scope_summary}. "
             f"Verify devices and site exist in inventory source '{settings.inventory_source}'."
         )
-    # --- End resolution ---
+
+    run_store.update_stage(run_id, "plan", "running", message="Persisting change request artifact...")
 
     artifact = ChangeRequest(
         meta=ArtifactMeta(
@@ -159,17 +167,19 @@ async def _async_plan(request: str, operator: str = 'local-user'):
         assumptions=planned.assumptions,
         dependencies=planned.dependencies,
         rollback_plan=planned.rollback_plan,
-        plan_decision=planned.plan_decision,  # carry the no_op/apply/blocked decision forward
+        plan_decision=planned.plan_decision,
     )
 
-    artifact_path = artifact_store.save_model(run_id, 'change_request', artifact)
-    run_store.update_stage(run_id, 'plan', 'completed', artifact='change_request')
-    print({
-        'run_id': run_id,
-        'artifact_path': str(artifact_path),
-        'output': artifact.model_dump(mode='json')
-    })
-
+    artifact_path = artifact_store.save_model(run_id, "change_request", artifact)
+    run_store.update_stage(run_id, "plan", "completed", artifact="change_request")
+    print(
+        {
+            "run_id": run_id,
+            "artifact_path": str(artifact_path),
+            "output": artifact.model_dump(mode="json"),
+        }
+    )
+    
 # ── Internal helpers (no Typer annotation constraints) ───────────────────────
 
 def _run_render(change_request: ChangeRequest) -> None:
