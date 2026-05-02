@@ -11,7 +11,7 @@ class Settings(BaseSettings):
         extra='ignore',
     )
 
-    ollama_model: str = 'llama3.2'
+    ollama_model: str = 'qwen3.5:9b'
     inventory_source: str = 'mock'
     require_approval_for_execute: bool = True
     runs_dir: Path = Path('runs')

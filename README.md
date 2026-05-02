@@ -10,21 +10,22 @@ The longer-term vision is a harness that supports network-engineering workflows 
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Language | Python 3.11+ |
-| Agent framework | [PydanticAI](https://docs.pydantic.dev/latest/concepts/pydantic_ai/) |
-| Data validation | [Pydantic v2](https://docs.pydantic.dev/) / [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) |
-| Local model inference | [Ollama](https://ollama.com/) (default model: `llama3.1:8b`) |
-| CLI | [Typer](https://typer.tiangolo.com/) + [Rich](https://rich.readthedocs.io/) |
-| Optional inventory | [NetBox](https://netboxlabs.com/) (read-only REST adapter) |
-| Package management | [uv](https://github.com/astral-sh/uv) |
-| Testing | [pytest](https://pytest.org/) + pytest-cov |
-| Linting / type checking | [Ruff](https://docs.astral.sh/ruff/) + [mypy](https://mypy-lang.org/) |
+| Layer                   | Technology                                                                                                                    |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Language                | Python 3.11+                                                                                                                  |
+| Agent framework         | [PydanticAI](https://docs.pydantic.dev/latest/concepts/pydantic_ai/)                                                          |
+| Data validation         | [Pydantic v2](https://docs.pydantic.dev/) / [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) |
+| Local model inference   | [Ollama](https://ollama.com/) (default model: `llama3.1:8b`)                                                                  |
+| CLI                     | [Typer](https://typer.tiangolo.com/) + [Rich](https://rich.readthedocs.io/)                                                   |
+| Optional inventory      | [NetBox](https://netboxlabs.com/) (read-only REST adapter)                                                                    |
+| Package management      | [uv](https://github.com/astral-sh/uv)                                                                                         |
+| Testing                 | [pytest](https://pytest.org/) + pytest-cov                                                                                    |
+| Linting / type checking | [Ruff](https://docs.astral.sh/ruff/) + [mypy](https://mypy-lang.org/)                                                         |
 
 ## Current scope
 
 The starter version currently does six things:
+
 - Accepts a plain-English network change request
 - Converts it into a structured `ChangeRequest` artifact
 - Supports a mock inventory lookup tool for grounding
@@ -36,6 +37,7 @@ The starter version currently does six things:
 ## Initial architecture
 
 The repo follows an artifact-first structure:
+
 - `models/` defines the schemas the system relies on
 - `glossaries/` contains modular YAML files (core terms + domains) that ground the agents.
 - `agents/` contains focused agent implementations
@@ -49,6 +51,7 @@ This layout keeps orchestration and policy in application code rather than hidin
 ## Starter contents
 
 The current starter includes:
+
 - `pyproject.toml` with the base dependencies and CLI entry point
 - a minimal `change_planner` agent using PydanticAI
 - typed models for `ChangeRequest`, `InventorySnapshot`, `ConfigRender`, and `ValidationReport`
@@ -83,6 +86,7 @@ net-agent-harness/
 ## Requirements
 
 Recommended local environment:
+
 - Python 3.11+
 - Ollama installed and running locally
 - at least one local model available for structured generation
@@ -128,7 +132,7 @@ Make sure Ollama is installed and the local service is running. Ollama supports 
 Example:
 
 ```bash
-ollama pull llama3.1:8b
+ollama pull qwen3.5:9b
 ```
 
 If you want to use a different model, create a local `.env` file from `.env.example` and change `NET_AGENT_OLLAMA_MODEL`. The starter now uses Pydantic Settings to load configuration from environment variables and `.env` automatically.
@@ -225,6 +229,7 @@ At the moment, the project is intentionally simple. Key source files:
 - `models/` — defines the artifact contracts
 
 This is enough to validate the basic local-agent loop:
+
 1. receive a request,
 2. call a tool if needed,
 3. return a structured `ChangeRequest`,
@@ -247,6 +252,7 @@ These tests are intentionally minimal. They exist mainly to confirm that the ini
 ## Safety boundaries for v0
 
 The current project should remain inside these boundaries:
+
 - no production credentials,
 - no live device access,
 - no config push capability,
@@ -259,6 +265,7 @@ This is important because network changes carry operational risk, and the value 
 ## Recommended next steps
 
 A sensible build order for the next few chunks is:
+
 1. Replace the deterministic `config_render` stub with a model-backed render flow
 2. Replace the deterministic validation function with richer validation logic and checks
 3. Add planner/renderer use of richer device-context lookups when the request implies interface-level work
@@ -291,6 +298,7 @@ The repository already includes placeholder adapter modules for systems such as 
 ## Development philosophy
 
 The project is being built in small chunks on purpose:
+
 - keep each step easy to review,
 - keep each change small enough to survive interruptions,
 - and validate one layer at a time.
