@@ -2,8 +2,10 @@ import json
 import uuid
 from pathlib import Path
 import typer
+import asyncio
 from rich import print
 from .agents.change_planner import change_planner
+from .orchestration.stream_utils import run_agent_with_spinner
 from .config import settings
 from .models.artifacts import ConfigRender
 from .models.changes import ChangeRequest, PlannedChange
@@ -67,6 +69,13 @@ def ensure_renderable(change_request: ChangeRequest) -> None:
 
 @app.command()
 def plan(request: str, operator: str = 'local-user'):
+    try:
+        asyncio.run(_async_plan(request, operator))
+    except Exception as e:
+        typer.secho(f"Error executing plan: {e}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
+async def _async_plan(request: str, operator: str = 'local-user'):
     route = route_intent(request)
     
     if route.domain in {"generic", "unknown"} or route.confidence < 0.65:
@@ -103,8 +112,14 @@ def plan(request: str, operator: str = 'local-user'):
         model_name=settings.ollama_model,
     )
     run_store.update_stage(run_id, 'plan', 'running')
-    result = change_planner.run_sync(request, deps=deps, model_settings={'temperature': 0.0})
-    planned = result.output
+    
+    planned = await run_agent_with_spinner(
+        agent=change_planner,
+        prompt=request,
+        deps=deps,
+        model_settings={'temperature': 0.0},
+        message="Evaluating configuration intent..."
+    )
 
     # --- Authoritative target resolution ---
     resolved_targets = resolve_from_scope(
