@@ -105,6 +105,23 @@ def plan(request: str, operator: str = 'local-user'):
     result = change_planner.run_sync(request, deps=deps, model_settings={'temperature': 0.0})
     planned = result.output
 
+    # --- Authoritative target resolution ---
+    resolved_targets = resolve_from_scope(
+        scope=planned.scope,
+        inventory_source=settings.inventory_source,
+    )
+
+    if not resolved_targets:
+        run_store.update_stage(run_id, 'plan', 'blocked',
+                            reason=f"No inventory match for scope: {planned.scope}")
+        raise typer.BadParameter(
+            f"Could not resolve target devices. "
+            f"Verify device '{getattr(planned.scope, 'device', None)}' "
+            f"and site '{getattr(planned.scope, 'site', None)}' "
+            f"exist in inventory source '{settings.inventory_source}'."
+        )
+    # --- End resolution ---
+
     artifact = ChangeRequest(
         meta=ArtifactMeta(
             run_id=run_id,
@@ -115,7 +132,7 @@ def plan(request: str, operator: str = 'local-user'):
         ),
         scope=planned.scope,
         target_scope=planned.target_scope,
-        resolved_targets=planned.resolved_targets,
+        resolved_targets=resolved_targets,
         clarifications_needed=planned.clarifications_needed,
         requested_change=planned.requested_change,
         risk=planned.risk,

@@ -3,7 +3,7 @@ from pydantic_ai import RunContext
 from ..adapters import mock_inventory_adapter
 from ..adapters.netbox_adapter import build_netbox_adapter_from_settings
 from ..orchestration.run_context import RunContextData
-
+from ..models.changes import ChangeScope, ResolvedTarget
 
 ELIGIBLE_SITE_ROLES = {"access", "access-switch", "switch"}
 
@@ -108,27 +108,7 @@ def resolve_targets(
     allowed_roles: list[str] | None = None,
 ) -> dict:
     inventory = lookup_inventory(ctx, site=site, device_name=device_name)
-    allowed = set(allowed_roles or [])
-
-    results = []
-    for item in inventory.get("results", []):
-        if device_name and item.get("name") != device_name:
-            continue
-
-        if site and item.get("site") != site:
-            continue
-
-        if allowed and not _role_matches(item.get("role"), allowed):
-            continue
-
-        results.append(_normalize_resolved_target(item))
-
-    return {
-        "source": inventory.get("source"),
-        "count": len(results),
-        "results": results,
-    }
-
+    return _filter_and_normalize(inventory, site=site, device_name=device_name, allowed_roles=allowed_roles)
 
 def resolve_site_targets(
     ctx: RunContext[RunContextData],
@@ -237,4 +217,105 @@ def _normalize_ip(item: dict) -> dict:
     }
 
 
+def resolve_device_target_sync(
+    site: str | None,
+    device_name: str,
+    inventory_source: str,
+) -> dict:
+    """
+    Plain Python version of resolve_device_target.
+    No RunContext dependency — safe to call from orchestration.
+    """
+    raw = lookup_inventory_sync(inventory_source, site=site, device_name=device_name)
+    return _filter_and_normalize(raw, site=site, device_name=device_name, allowed_roles=None)
 
+
+def resolve_site_targets_sync(
+    site: str,
+    inventory_source: str,
+    allowed_roles: list[str] | None = None,
+) -> dict:
+    """
+    Plain Python version of resolve_site_targets.
+    No RunContext dependency — safe to call from orchestration.
+    """
+    raw = lookup_inventory_sync(inventory_source, site=site, device_name=None)
+    return _filter_and_normalize(
+        raw,
+        site=site,
+        device_name=None,
+        allowed_roles=allowed_roles or sorted(ELIGIBLE_SITE_ROLES),
+    )
+
+
+def _filter_and_normalize(
+    inventory: dict,
+    site: str | None,
+    device_name: str | None,
+    allowed_roles: list[str] | None,
+) -> dict:
+    """
+    Shared filtering and normalization logic used by both sync and
+    RunContext-based resolution paths.
+    """
+    allowed = set(allowed_roles or [])
+    results = []
+
+    for item in inventory.get("results", []):
+        if device_name and item.get("name") != device_name:
+            continue
+        if site and item.get("site") != site:
+            continue
+        if allowed and not _role_matches(item.get("role"), allowed):
+            continue
+        results.append(_normalize_resolved_target(item))
+
+    return {
+        "source": inventory.get("source"),
+        "count": len(results),
+        "results": results,
+    }
+
+def lookup_inventory_sync(
+    inventory_source: str,
+    site: str | None = None,
+    device_name: str | None = None,
+) -> dict:
+    """
+    Loads inventory without a RunContext.
+    Supports the same mock/file/API sources as lookup_inventory.
+    """
+    if inventory_source == "mock":
+        return load_mock_inventory(site=site, device_name=device_name)
+
+    if inventory_source.endswith(".yaml") or inventory_source.endswith(".json"):
+        return load_file_inventory(inventory_source, site=site, device_name=device_name)
+
+    raise ValueError(f"Unsupported inventory_source: {inventory_source!r}")
+
+def resolve_from_scope(
+    scope: ChangeScope,
+    inventory_source: str,
+) -> list[ResolvedTarget]:
+    """
+    Resolves inventory targets from a planner-produced scope.
+    Uses device-level resolution if a device name is present,
+    otherwise falls back to site-level resolution.
+    Returns a flat list of ResolvedTarget objects.
+    """
+    if scope.device:
+        raw = resolve_device_target_sync(
+            site=scope.site,
+            device_name=scope.device,
+            inventory_source=inventory_source,
+        )
+    elif scope.site:
+        raw = resolve_site_targets_sync(
+            site=scope.site,
+            inventory_source=inventory_source,
+            allowed_roles=getattr(scope, "allowed_roles", None),
+        )
+    else:
+        return []
+
+    return raw.get("results", [])
