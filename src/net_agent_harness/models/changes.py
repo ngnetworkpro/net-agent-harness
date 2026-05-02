@@ -72,6 +72,12 @@ class PlanDecision(BaseModel):
 
 
 class PlannedChange(BaseModel):
+    """
+    Raw output from the change planner agent.
+    resolved_targets here is informational — the orchestration layer
+    overwrites it with an authoritative inventory lookup before
+    writing the ChangeRequest artifact.
+    """
     scope: ScopeRef
     target_scope: TargetScope = Field(
         description="How the change targets infrastructure: a single device, a site-wide fan-out, or ambiguous"
@@ -101,6 +107,11 @@ class PlannedChange(BaseModel):
 
 
 class ChangeRequest(BaseModel):
+    """
+    Durable change artifact written after planning is complete.
+    resolved_targets is always set by orchestration, never trusted
+    from LLM output alone.
+    """
     meta: ArtifactMeta
     scope: ScopeRef
     target_scope: TargetScope

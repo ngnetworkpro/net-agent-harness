@@ -112,13 +112,17 @@ def plan(request: str, operator: str = 'local-user'):
     )
 
     if not resolved_targets:
+        scope_summary = (
+            f"devices={planned.scope.device_names or 'none'}, "
+            f"site={planned.scope.site or 'none'}, "
+            f"roles={planned.scope.device_roles or planned.scope.requested_role or 'none'}"
+        )
         run_store.update_stage(run_id, 'plan', 'blocked',
-                            reason=f"No inventory match for scope: {planned.scope}")
+                            reason=f"No inventory match for scope: {scope_summary}")
         raise typer.BadParameter(
             f"Could not resolve target devices. "
-            f"Verify device '{getattr(planned.scope, 'device', None)}' "
-            f"and site '{getattr(planned.scope, 'site', None)}' "
-            f"exist in inventory source '{settings.inventory_source}'."
+            f"Scope was: {scope_summary}. "
+            f"Verify devices and site exist in inventory source '{settings.inventory_source}'."
         )
     # --- End resolution ---
 

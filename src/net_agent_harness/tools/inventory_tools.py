@@ -3,7 +3,7 @@ from pydantic_ai import RunContext
 from ..adapters import mock_inventory_adapter
 from ..adapters.netbox_adapter import build_netbox_adapter_from_settings
 from ..orchestration.run_context import RunContextData
-from ..models.changes import ChangeScope, ResolvedTarget
+from ..models.changes import ScopeRef, ResolvedTarget
 
 ELIGIBLE_SITE_ROLES = {"access", "access-switch", "switch"}
 
@@ -63,14 +63,14 @@ def _normalize_device(item: dict) -> dict:
     }
 
 
-def _normalize_resolved_target(item: dict) -> dict:
-    return {
-        "name": item.get("name"),
-        "site": item.get("site"),
-        "role": item.get("role"),
-        "platform": item.get("platform"),
-        "primary_ip": item.get("primary_ip"),
-    }
+def _normalize_resolved_target(item: dict) -> ResolvedTarget:
+    return ResolvedTarget(
+        name=item.get("name"),
+        site=item.get("site"),
+        role=item.get("role"),
+        platform=item.get("platform"),
+        primary_ip=item.get("primary_ip"),
+    )
 
 
 def _role_matches(role: str | None, allowed_roles: set[str] | None) -> bool:
@@ -286,36 +286,50 @@ def lookup_inventory_sync(
     Supports the same mock/file/API sources as lookup_inventory.
     """
     if inventory_source == "mock":
-        return load_mock_inventory(site=site, device_name=device_name)
+        return _mock_inventory_snapshot(site=site, device_name=device_name)
 
-    if inventory_source.endswith(".yaml") or inventory_source.endswith(".json"):
-        return load_file_inventory(inventory_source, site=site, device_name=device_name)
+    # TODO: implement file-based inventory resolution
+    # TODO: implement netbox-based inventory resolution
 
     raise ValueError(f"Unsupported inventory_source: {inventory_source!r}")
 
 def resolve_from_scope(
-    scope: ChangeScope,
+    scope: ScopeRef,
     inventory_source: str,
 ) -> list[ResolvedTarget]:
     """
-    Resolves inventory targets from a planner-produced scope.
-    Uses device-level resolution if a device name is present,
-    otherwise falls back to site-level resolution.
-    Returns a flat list of ResolvedTarget objects.
+    Resolves inventory targets from a planner-produced ScopeRef.
+    
+    Resolution priority:
+    1. Explicit device names — resolve each individually
+    2. Site + roles — resolve by site filtered to allowed roles
+    3. Site only — resolve all eligible devices at site
+    Returns empty list if scope has insufficient information.
     """
-    if scope.device:
-        raw = resolve_device_target_sync(
-            site=scope.site,
-            device_name=scope.device,
-            inventory_source=inventory_source,
+    results = []
+
+    # Priority 1: explicit device names
+    if scope.device_names:
+        for device_name in scope.device_names:
+            raw = resolve_device_target_sync(
+                site=scope.site,
+                device_name=device_name,
+                inventory_source=inventory_source,
+            )
+            results.extend(raw.get("results", []))
+        return results
+
+    # Priority 2: site + roles
+    if scope.site:
+        roles = scope.device_roles or (
+            [scope.requested_role] if scope.requested_role else None
         )
-    elif scope.site:
         raw = resolve_site_targets_sync(
             site=scope.site,
             inventory_source=inventory_source,
-            allowed_roles=getattr(scope, "allowed_roles", None),
+            allowed_roles=roles,
         )
-    else:
-        return []
+        return raw.get("results", [])
 
-    return raw.get("results", [])
+    # TODO: add region-level resolution when inventory supports it
+    return []
