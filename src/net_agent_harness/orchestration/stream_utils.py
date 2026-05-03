@@ -7,7 +7,7 @@ async def run_agent_with_spinner(
     prompt,
     deps=None,
     model_settings=None,
-    message="Initializing planner...",
+    message="Initializing...",
 ):
     with console.status(message) as status:
         async for event in agent.run_stream_events(

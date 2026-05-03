@@ -8,7 +8,7 @@ from .agents.change_planner import change_planner
 from .orchestration.stream_utils import run_agent_with_spinner
 from .config import settings
 from .models.artifacts import ConfigRender
-from .models.changes import ChangeRequest, PlannedChange
+from .models.changes import ChangeRequest, PlannedChange, PlanDecision
 from .models.common import ArtifactMeta
 from datetime import timezone, datetime
 from .models.enums import RunStage
@@ -16,9 +16,11 @@ from .orchestration.coordinator import StageCoordinator
 from .orchestration.run_context import RunContextData
 from .services.artifact_store import ArtifactStore
 from .services.run_store import RunStore
+from .services.run_progress_reporter import RunProgressReporter
 from .tools.config_tools import build_stub_config_render
 from .tools.validation_tools import validate_config_render
 from .tools.inventory_tools import resolve_from_scope
+from .tools.evaluation import evaluate_intent_state 
 
 from .orchestration.intent_router import route_intent
 from .orchestration.domain_loader import load_domain_context, DomainLoadError
@@ -92,6 +94,7 @@ async def _async_plan(request: str, operator: str = "local-user"):
     run_id = f"run-{uuid.uuid4().hex[:8]}"
     runs_root = get_runs_root()
     run_store = RunStore(runs_root)
+    reporter = RunProgressReporter(run_store, run_id)
     artifact_store = ArtifactStore(runs_root)
 
     deps = RunContextData(
@@ -112,17 +115,16 @@ async def _async_plan(request: str, operator: str = "local-user"):
         model_name=settings.ollama_model,
     )
 
-    run_store.update_stage(run_id, "plan", "running", message="Evaluating configuration intent...")
-
+    reporter.update("plan", "running", "🧠 Evaluating configuration intent...")
     planned = await run_agent_with_spinner(
         agent=change_planner,
         prompt=request,
         deps=deps,
         model_settings={"temperature": 0.0},
-        message="Evaluating configuration intent...",
+        message="Running Change Planner Agent..."
     )
 
-    run_store.update_stage(run_id, "plan", "running", message="Resolving inventory scope...")
+    reporter.update("plan", "running", " 🔍 Resolving inventory scope...")
 
     resolved_targets = resolve_from_scope(
         scope=planned.scope,
@@ -147,8 +149,24 @@ async def _async_plan(request: str, operator: str = "local-user"):
             f"Scope was: {scope_summary}. "
             f"Verify devices and site exist in inventory source '{settings.inventory_source}'."
         )
+    
+    reporter.update("plan", "running", " 🔍 Evaluating intent state...")
+    if resolved_targets:
+        decision_dict = evaluate_intent_state(
+            run_id=run_id,
+            domain=route.domain, 
+            intent_type=planned.requested_change.intent,
+            site=planned.scope.site,
+            device_names=[t.name for t in resolved_targets],
+            desired_state=planned.requested_change.desired_state,
+        )
+    # 4. ENFORCE
+    reporter.update("plan", "running", "🔧 Enforcing plan decision...")
+    planned.plan_decision = PlanDecision(**decision_dict)
+    # 5. Persist the final object (already planned + evaluated)
+    artifact_path = artifact_store.save_model(run_id, "change_request", planned)
 
-    run_store.update_stage(run_id, "plan", "running", message="Persisting change request artifact...")
+    reporter.update("plan", "running", "💾 Persisting change request artifact...")
 
     artifact = ChangeRequest(
         meta=ArtifactMeta(
@@ -171,15 +189,14 @@ async def _async_plan(request: str, operator: str = "local-user"):
     )
 
     artifact_path = artifact_store.save_model(run_id, "change_request", artifact)
-    run_store.update_stage(run_id, "plan", "completed", artifact="change_request")
-    print(
-        {
-            "run_id": run_id,
-            "artifact_path": str(artifact_path),
-            "output": artifact.model_dump(mode="json"),
-        }
-    )
+    if planned.plan_decision.decision.value == "no_op":
+        reporter.update("plan", "completed", "✅ plan complete: no changes needed", artifact="change_request")
+    elif planned.plan_decision.decision.value == "apply":
+        reporter.update("plan", "completed", "✅ plan complete: ready for next steps", artifact="change_request")
+    else:
+        reporter.update("plan", "blocked", "❌ plan blocked", artifact="change_request")
     
+
 # ── Internal helpers (no Typer annotation constraints) ───────────────────────
 
 def _run_render(change_request: ChangeRequest) -> None:
