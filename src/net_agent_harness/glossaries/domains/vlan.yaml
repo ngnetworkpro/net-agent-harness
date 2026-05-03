@@ -38,7 +38,7 @@ intents:
     description: "Create or update a switched virtual interface for a VLAN."
     required_fields: [vlan_id, ip_address, prefix_length]
   - name: provision_vlan_trunk
-    description: "Composite intent: create a VLAN if needed and allow it on one or more trunk interfaces."
+    description: "Composite intent: create a VLAN if needed, configure the interface as a trunk, and allow the vlan on the trunk interface."
     required_fields: [vlan_id, target_interfaces]
   - name: check_vlan_state
     description: "Inspect VLAN presence or VLAN-related interface state without making changes."
@@ -59,11 +59,15 @@ aliases:
   "create svi for vlan": create_or_update_svi
 
 rules:
-  - "If the request mentions trunk, uplink, tagged, or allowed VLANs, prefer a trunk-related intent."
-  - "If the request mentions a port being placed in a VLAN without mentioning trunking, prefer set_access_vlan."
-  - "If the request mentions a gateway IP, routed VLAN interface, or default gateway for a VLAN, consider create_or_update_svi."
-  - "If the request implies both VLAN creation and trunk allowance, consider the composite intent provision_vlan_trunk."
-  - "Do not assume a VLAN already exists unless current state or inventory confirms it."
+  - "Do not change the switchport mode from trunk to access or from access to trunk unless explicitly asked in the request. "
+  - "If the request mentions trunk, uplink, tagged, or allowed VLANs, prefer a trunk-related intent. "
+  - "If the request mentions a port being placed in a VLAN without mentioning trunking, prefer set_access_vlan. "
+  - "If the request mentions a gateway IP, routed VLAN interface, or default gateway for a VLAN, consider create_or_update_svi. "
+  - "If the request implies both VLAN creation and trunk allowance, consider the composite intent provision_vlan_trunk. "
+  - "Do not assume a VLAN already exists unless current state or inventory confirms it. "
+  - "If the request says 'allowed' but does not explicitly say trunk/uplink/tagged/native VLAN, ask a clarification. "
+  - "If inventory shows the interface is access-mode, do not reinterpret 'allowed' as trunk intent. "
+  - "Only map to trunk allowed-VLAN membership when the request and inventory both support trunk semantics."
 
 examples:
   - user: "Add VLAN 200 to trunk port Gi0/1 on sw1 at HQ"
@@ -80,7 +84,7 @@ examples:
     device: "sw1"
     site: "Branch1"
 
-  - user: "Set the native VLAN to 99 on uplink Gi0/1 at HQ"
+  - user: "Set the native VLAN to 99 on trunk Gi0/1 at HQ"
     normalized_intent: "set_native_vlan"
     vlan_id: 99
     target_interfaces: ["Gi0/1"]
@@ -91,4 +95,4 @@ examples:
     vlan_id: 30
     ip_address: "10.20.30.1"
     prefix_length: 24
-    device: "sw1"
+    device: "fw1"
