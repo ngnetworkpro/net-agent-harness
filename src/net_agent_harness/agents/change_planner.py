@@ -5,7 +5,7 @@ from pydantic_ai.output import NativeOutput
 from ..models.changes import PlannedChange
 from ..orchestration.run_context import RunContextData
 from ..tools.inventory_tools import lookup_inventory, resolve_device_target, resolve_site_targets
-from ..tools.vlan_state import compute_vlan_diff
+from ..tools.evaluation import evaluate_intent_state
 
 from ..agents.agent_factory import build_agent
 
@@ -30,6 +30,7 @@ def planner_system_prompt(ctx: RunContext[RunContextData]) -> str:
         "- desired configuration intent ",
         "- current-state questions ",
         "- unsupported or ambiguous requests ",
+        "- when wording is ambiguous or conflicts with inventory configuration, return question/blocked instead of assuming "
         "4. Prefer vendor-neutral intent, not vendor-specific syntax. ",
         "5. Do not render CLI commands or API payloads. ",
         "6. Do not decide execution details unless explicitly provided by context. ",
@@ -149,9 +150,6 @@ async def _enforce_plan_decision(
 
     return output
 
-
-
-
 @change_planner.tool
 async def get_inventory(ctx: RunContext[RunContextData], site: str):
     return lookup_inventory(ctx, site=site)
@@ -165,59 +163,3 @@ async def get_site_targets(ctx: RunContext[RunContextData], site: str):
 async def get_device_target(ctx: RunContext[RunContextData], site: str | None, device_name: str):
     return resolve_device_target(ctx, site=site, device_name=device_name)
 
-
-@change_planner.tool
-async def evaluate_vlan_intent(
-    ctx: RunContext[RunContextData],
-    site: str,
-    device_name: str,
-    vlan_id: int,
-    target_interfaces: list[str],
-    mode: str = "trunk",
-    vlan_name: str | None = None,
-) -> dict:
-    """Evaluate whether a VLAN provisioning intent is already satisfied on a device.
-
-    Call this after resolving the target device from inventory.  The result is a
-    PlanDecision dict — decision (apply | no_op | blocked), reason, and diff — that
-    should be placed verbatim into plan_decision on the PlannedChange output.
-
-    Parameters
-    ----------
-    site:
-        Site name used to look up the device's full inventory snapshot.
-    device_name:
-        Exact device name as returned by the inventory tool.
-    vlan_id:
-        VLAN ID the request wants to provision.
-    target_interfaces:
-        Interface names the VLAN should be present on.
-    mode:
-        ``"trunk"`` (default) or ``"access"``.
-    vlan_name:
-        Optional human-readable VLAN label; used only in reason strings.
-    """
-    from ..adapters.mock_inventory_adapter import get_inventory_for_site
-
-    snapshot = get_inventory_for_site(run_id=ctx.deps.run_id, site=site)
-    device = next((d for d in snapshot.devices if d.name == device_name), None)
-
-    if device is None:
-        return {
-            "decision": "blocked",
-            "reason": (
-                f"Device '{device_name}' was not found in the inventory snapshot "
-                f"for site '{site}'. Verify the device name and site."
-            ),
-            "diff": {"vlans_to_create": [], "ports_to_update": []},
-        }
-
-    return compute_vlan_diff(
-        intent={
-            "vlan_id": vlan_id,
-            "target_interfaces": target_interfaces,
-            "mode": mode,
-            "vlan_name": vlan_name,
-        },
-        current_state=device,
-    )

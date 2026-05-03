@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from .common import ArtifactMeta, ScopeRef
 from .enums import ChangeRisk, TargetScope, PlanDecisionType
+from typing import Any
 
 
 class ResolvedTarget(BaseModel):
@@ -33,6 +34,10 @@ class RequestedChange(BaseModel):
     constraints: list[str] = Field(
         default_factory=list,
         description="Explicit constraints stated in the request. Return an empty list if none are provided."
+    )
+    desired_state: dict[str, Any] = Field(
+        default_factory=dict,
+        description="The desired state of the network after the change. This is a dictionary of key-value pairs representing the desired configuration."
     )
 
 
