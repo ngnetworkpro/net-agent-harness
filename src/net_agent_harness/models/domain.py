@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from .enums import NetworkDomain
 
 @dataclass
 class TermEntry:
@@ -19,7 +20,7 @@ class FewShotExample:
 
 @dataclass
 class DomainContext:
-    domain: str
+    domain: NetworkDomain
     description: str
     terms: list[TermEntry]
     intents: list[IntentSpec]
@@ -28,7 +29,7 @@ class DomainContext:
     def render_prompt_block(self) -> str:
         """Serialize the domain context into a system prompt section."""
         lines = [
-            f"--- DOMAIN CONTEXT: {self.domain.upper()} ---",
+            f"--- DOMAIN CONTEXT: {self.domain.value.upper()} ---",
             self.description,
             "",
             "## Glossary",

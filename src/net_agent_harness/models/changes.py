@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from .common import ArtifactMeta, ScopeRef
-from .enums import ChangeRisk, TargetScope, PlanDecisionType
+from .enums import ChangeRisk, TargetScope, PlanDecisionType, NetworkDomain
 from typing import Any
 
 
@@ -118,6 +118,7 @@ class ChangeRequest(BaseModel):
     from LLM output alone.
     """
     meta: ArtifactMeta
+    domain: NetworkDomain
     scope: ScopeRef
     target_scope: TargetScope
     resolved_targets: list[ResolvedTarget] = Field(default_factory=list)

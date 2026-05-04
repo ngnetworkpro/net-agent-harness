@@ -5,9 +5,10 @@ import typer
 import asyncio
 from rich import print
 from .agents.change_planner import change_planner
+from .agents.config_render_agent import change_render_agent
 from .orchestration.stream_utils import run_agent_with_spinner
 from .config import settings
-from .models.artifacts import ConfigRender
+from .models.artifacts import ConfigRender, VlanRenderInput
 from .models.changes import ChangeRequest, PlannedChange, PlanDecision
 from .models.common import ArtifactMeta
 from datetime import timezone, datetime
@@ -17,10 +18,9 @@ from .orchestration.run_context import RunContextData
 from .services.artifact_store import ArtifactStore
 from .services.run_store import RunStore
 from .services.run_progress_reporter import RunProgressReporter
-from .tools.config_tools import build_stub_config_render
-from .tools.validation_tools import validate_config_render
 from .tools.inventory_tools import resolve_from_scope
-from .tools.evaluation import evaluate_intent_state 
+from .tools.evaluation import evaluate_intent_state
+from .tools.validation_tools import validate_config_render 
 
 from .orchestration.intent_router import route_intent
 from .orchestration.domain_loader import load_domain_context, DomainLoadError
@@ -79,8 +79,9 @@ def plan(request: str, operator: str = 'local-user'):
 
 async def _async_plan(request: str, operator: str = "local-user"):
     route = route_intent(request)
+    run_stage = RunStage.PLAN
 
-    if route.domain in {"generic", "unknown"} or route.confidence < 0.65:
+    if route.domain.value in {"generic", "unknown"} or route.confidence < 0.65:
         raise typer.BadParameter(
             "Could not confidently determine the network domain from your request. "
             "Please explicitly mention 'vlan', 'acl', 'routing', etc., or provide more context."
@@ -99,7 +100,7 @@ async def _async_plan(request: str, operator: str = "local-user"):
 
     deps = RunContextData(
         run_id=run_id,
-        stage=RunStage.PLAN,
+        stage=run_stage,
         operator=operator,
         model_name=settings.ollama_model,
         require_approval_for_execute=settings.require_approval_for_execute,
@@ -111,11 +112,11 @@ async def _async_plan(request: str, operator: str = "local-user"):
     run_store.create_run(
         run_id=run_id,
         operator=operator,
-        stage=RunStage.PLAN,
+        stage=run_stage,
         model_name=settings.ollama_model,
     )
 
-    reporter.update("plan", "running", "🧠 Evaluating configuration intent...")
+    reporter.update(run_stage.value, "running", "🧠 Evaluating configuration intent...")
     planned = await run_agent_with_spinner(
         agent=change_planner,
         prompt=request,
@@ -124,7 +125,7 @@ async def _async_plan(request: str, operator: str = "local-user"):
         message="Running Change Planner Agent..."
     )
 
-    reporter.update("plan", "running", " 🔍 Resolving inventory scope...")
+    reporter.update(run_stage.value, "running", " 🔍 Resolving inventory scope...")
 
     resolved_targets = resolve_from_scope(
         scope=planned.scope,
@@ -140,7 +141,7 @@ async def _async_plan(request: str, operator: str = "local-user"):
 
         run_store.update_stage(
             run_id,
-            "plan",
+            run_stage.value,
             "blocked",
             reason=f"No inventory match for scope: {scope_summary}",
         )
@@ -150,23 +151,23 @@ async def _async_plan(request: str, operator: str = "local-user"):
             f"Verify devices and site exist in inventory source '{settings.inventory_source}'."
         )
     
-    reporter.update("plan", "running", " 🔍 Evaluating intent state...")
+    reporter.update(run_stage.value, "running", " 🔍 Evaluating intent state...")
     if resolved_targets:
         decision_dict = evaluate_intent_state(
             run_id=run_id,
-            domain=route.domain, 
+            domain=route.domain.value, 
             intent_type=planned.requested_change.intent,
             site=planned.scope.site,
             device_names=[t.name for t in resolved_targets],
             desired_state=planned.requested_change.desired_state,
         )
     # 4. ENFORCE
-    reporter.update("plan", "running", "🔧 Enforcing plan decision...")
+    reporter.update(run_stage.value, "running", "🔧 Enforcing plan decision...")
     planned.plan_decision = PlanDecision(**decision_dict)
     # 5. Persist the final object (already planned + evaluated)
     artifact_path = artifact_store.save_model(run_id, "change_request", planned)
 
-    reporter.update("plan", "running", "💾 Persisting change request artifact...")
+    reporter.update(run_stage.value, "running", "💾 Persisting change request artifact...")
 
     artifact = ChangeRequest(
         meta=ArtifactMeta(
@@ -176,6 +177,7 @@ async def _async_plan(request: str, operator: str = "local-user"):
             created_at=datetime.now(timezone.utc),
             created_by=operator,
         ),
+        domain=route.domain,
         scope=planned.scope,
         target_scope=planned.target_scope,
         resolved_targets=resolved_targets,
@@ -190,24 +192,60 @@ async def _async_plan(request: str, operator: str = "local-user"):
 
     artifact_path = artifact_store.save_model(run_id, "change_request", artifact)
     if planned.plan_decision.decision.value == "no_op":
-        reporter.update("plan", "completed", "✅ plan complete: no changes needed", artifact="change_request")
+        reporter.update(run_stage.value, "completed", "✅ plan complete: no changes needed", artifact="change_request")
     elif planned.plan_decision.decision.value == "apply":
-        reporter.update("plan", "completed", "✅ plan complete: ready for next steps", artifact="change_request")
+        reporter.update(run_stage.value, "completed", f"✅ plan complete: ready for next steps. change request artifact at: {artifact_path}", artifact="change_request")
     else:
-        reporter.update("plan", "blocked", "❌ plan blocked", artifact="change_request")
+        reporter.update(run_stage.value, "blocked", f"❌ plan blocked. See artifact at: {artifact_path}", artifact="change_request")
     
 
 # ── Internal helpers (no Typer annotation constraints) ───────────────────────
 
-def _run_render(change_request: ChangeRequest) -> None:
-    """Core render logic, callable from CLI or programmatically."""
+async def _async_render(change_request: ChangeRequest) -> None:
+    """Core async render logic, callable from CLI or programmatically."""
     ensure_renderable(change_request)
     artifact_store = ArtifactStore(get_runs_root())
     run_store = RunStore(get_runs_root())
-    run_store.update_stage(change_request.meta.run_id, 'render', 'running')
-    render_result = build_stub_config_render(change_request)
+    reporter = RunProgressReporter(run_store, change_request.meta.run_id)
+    reporter.update("render", "running", "🔧 Rendering configuration...")
+
+    plan_decision = change_request.plan_decision
+    if plan_decision is None:
+        raise ValueError("plan_decision is required for rendering")
+
+    device_names = change_request.scope.device_names or ["unknown-device"]
+    primary_device = device_names[0]
+    intent = change_request.requested_change.intent.lower()
+    desired_state = change_request.requested_change.desired_state
+
+    if "access" in intent and "trunk" not in intent:
+        intent_type = "set_access_vlan"
+        mode = "access"
+    elif "trunk" in intent or "provision_vlan_trunk" in intent:
+        intent_type = "provision_vlan_trunk"
+        mode = "trunk"
+    else:
+        intent_type = "set_access_vlan"
+        mode = "access"
+
+    render_input = VlanRenderInput(
+        intent_type=intent_type,
+        vlans_to_create=plan_decision.diff.vlans_to_create,
+        ports_to_update=plan_decision.diff.ports_to_update,
+        target_device=primary_device,
+        vlan_name=desired_state.get("vlan_name"),
+        mode=mode,
+    )
+
+    render_result = await run_agent_with_spinner(
+        agent=change_render_agent,
+        prompt="",
+        deps=render_input,
+        model_settings={"temperature": 0.0},
+        message="Running Config Render Agent...",
+    )
     artifact_path = artifact_store.save_model(change_request.meta.run_id, 'config_render', render_result)
-    run_store.update_stage(change_request.meta.run_id, 'render', 'completed', artifact='config_render')
+    reporter.update("render", "completed", f"✅ render complete: {artifact_path}", artifact='config_render')
     print({'run_id': change_request.meta.run_id, 'artifact_path': str(artifact_path), 'output': render_result.model_dump(mode='json')})
 
 
@@ -237,7 +275,11 @@ def render(change_request_file: Path):
     change_request = ChangeRequest.model_validate_json(
         change_request_file.read_text(encoding='utf-8')
     )
-    _run_render(change_request)
+    try:
+        asyncio.run(_async_render(change_request))
+    except Exception as e:
+        typer.secho(f"Error executing render: {e}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -256,7 +298,7 @@ def run_stages(artifact_path: Path):
     ensure_renderable(change_request)
     run_id = change_request.meta.run_id
     # Render config
-    _run_render(change_request)
+    asyncio.run(_async_render(change_request))
     # Validate
     # Note: run_stages passes a ChangeRequest here, so we need to build the render first
     # validate operates on a ConfigRender; for the pipeline, reload from disk

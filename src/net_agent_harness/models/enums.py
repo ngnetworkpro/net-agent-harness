@@ -6,8 +6,6 @@ class ChangeRisk(str, Enum):
     medium = "medium"
     high = "high"
 
-
-
 class TargetScope(str, Enum):
     device = "device"
     site = "site"
@@ -32,6 +30,14 @@ class ChangeRisk(str, Enum):
     HIGH = "high"
     CRITICAL = "critical"
 
+class NetworkDomain(str, Enum):
+    VLAN = "vlan"
+    ACL = "acl"
+    PREFIX_LIST = "prefix-list"
+    ROUTE_MAP = "route-map"
+    ROUTING = "routing"
+    WIRELESS = "wireless"
+    OTHER = "other"
 
 class ValidationStatus(str, Enum):
     PASS = "pass"

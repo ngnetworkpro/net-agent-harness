@@ -2,13 +2,14 @@ from functools import lru_cache
 import importlib.resources
 import yaml
 from ..models.domain import DomainContext, TermEntry, IntentSpec, FewShotExample
+from ..models.enums import NetworkDomain
 
 class DomainLoadError(Exception):
     """Raised when a domain context cannot be loaded."""
     pass
 
 @lru_cache(maxsize=16)
-def load_domain_context(domain: str) -> DomainContext:
+def load_domain_context(domain: NetworkDomain) -> DomainContext:
     try:
         core_text = importlib.resources.files("net_agent_harness.glossaries").joinpath("core_terms.yaml").read_text()
         core = yaml.safe_load(core_text)
@@ -16,7 +17,7 @@ def load_domain_context(domain: str) -> DomainContext:
         core = {"terms": []}
 
     try:
-        domain_text = importlib.resources.files("net_agent_harness.glossaries.domains").joinpath(f"{domain}.yaml").read_text()
+        domain_text = importlib.resources.files("net_agent_harness.glossaries.domains").joinpath(f"{domain.value}.yaml").read_text()
         domain_data = yaml.safe_load(domain_text)
     except FileNotFoundError as exc:
         raise DomainLoadError(f"Domain context not found for '{domain}'") from exc
