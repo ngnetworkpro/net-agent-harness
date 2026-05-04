@@ -153,7 +153,7 @@ async def _async_plan(request: str, operator: str = "local-user"):
     
     reporter.update(run_stage.value, "running", " 🔍 Evaluating intent state...")
     if resolved_targets:
-        decision_dict = evaluate_intent_state(
+        plan_decision = evaluate_intent_state(
             run_id=run_id,
             domain=route.domain.value, 
             intent_type=planned.requested_change.intent,
@@ -163,7 +163,7 @@ async def _async_plan(request: str, operator: str = "local-user"):
         )
     # 4. ENFORCE
     reporter.update(run_stage.value, "running", "🔧 Enforcing plan decision...")
-    planned.plan_decision = PlanDecision(**decision_dict)
+    planned.plan_decision = plan_decision
     # 5. Persist the final object (already planned + evaluated)
     artifact_path = artifact_store.save_model(run_id, "change_request", planned)
 

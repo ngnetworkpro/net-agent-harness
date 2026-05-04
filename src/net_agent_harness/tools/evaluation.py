@@ -1,13 +1,31 @@
 from collections.abc import Callable
+from ..models.changes import DeviceChange, PlanDecision, VlanChange
+from ..models.enums import NetworkDomain, PlanDecisionType
 from ..tools.vlan_state import compute_vlan_diff
 
 
-def _blocked(reason: str, diff: dict | None = None) -> dict:
-    return {
-        "decision": "blocked",
-        "reason": reason,
-        "diff": diff or {},
-    }
+def _blocked(reason: str) -> PlanDecision:
+    return PlanDecision(
+        decision=PlanDecisionType.BLOCKED,
+        reason=reason,
+        diff=[],
+    )
+
+
+def _no_op(reason: str) -> PlanDecision:
+    return PlanDecision(
+        decision=PlanDecisionType.NO_OP,
+        reason=reason,
+        diff=[],
+    )
+
+
+def _apply(reason: str, diff: list[DeviceChange]) -> PlanDecision:
+    return PlanDecision(
+        decision=PlanDecisionType.APPLY,
+        reason=reason,
+        diff=diff,
+    )
 
 
 def _load_device_from_inventory(
@@ -27,7 +45,7 @@ def _evaluate_vlan_intent(
     site: str,
     device_name: str,
     desired_state: dict,
-) -> dict:
+) -> PlanDecision:
     device = _load_device_from_inventory(run_id, site=site, device_name=device_name)
     if device is None:
         return _blocked(
@@ -43,7 +61,7 @@ def _evaluate_vlan_intent(
         if vlan_id is None:
             return _blocked("desired_state.vlan_id is required for set_access_vlan.")
 
-        return compute_vlan_diff(
+        device_changes = compute_vlan_diff(
             intent={
                 "vlan_id": vlan_id,
                 "target_interfaces": target_interfaces,
@@ -53,11 +71,30 @@ def _evaluate_vlan_intent(
             current_state=device,
         )
 
+        if not device_changes:
+            return _no_op(f"No changes required for {device_name}.")
+
+        changes = device_changes[0].changes
+        if not changes.vlans_to_create and not changes.ports_to_update:
+            return _no_op(
+                f"VLAN {vlan_id} already access-configured on all target interfaces on {device_name}."
+            )
+
+        reason_parts = []
+        if changes.vlans_to_create:
+            reason_parts.append(f"VLAN {vlan_id} must be created on {device_name}")
+        if changes.ports_to_update:
+            reason_parts.append(
+                f"{len(changes.ports_to_update)} interface(s) require access update: {', '.join(changes.ports_to_update)}"
+            )
+
+        return _apply("; ".join(reason_parts) + ".", device_changes)
+
     if intent_type in {"create_vlan"}:
         if vlan_id is None:
             return _blocked("desired_state.vlan_id is required for create_vlan.")
 
-        return compute_vlan_diff(
+        device_changes = compute_vlan_diff(
             intent={
                 "vlan_id": vlan_id,
                 "target_interfaces": [],
@@ -66,11 +103,17 @@ def _evaluate_vlan_intent(
             current_state=device,
         )
 
+        changes = device_changes[0].changes
+        if not changes.vlans_to_create:
+            return _no_op(f"VLAN {vlan_id} already exists on {device_name}.")
+
+        return _apply(f"VLAN {vlan_id} must be created on {device_name}.", device_changes)
+
     if intent_type in {"update_trunk_allowed_vlans", "provision_vlan_trunk"}:
         if vlan_id is None:
             return _blocked(f"desired_state.vlan_id is required for {intent_type}.")
 
-        return compute_vlan_diff(
+        device_changes = compute_vlan_diff(
             intent={
                 "vlan_id": vlan_id,
                 "target_interfaces": target_interfaces,
@@ -80,6 +123,22 @@ def _evaluate_vlan_intent(
             current_state=device,
         )
 
+        changes = device_changes[0].changes
+        if not changes.vlans_to_create and not changes.ports_to_update:
+            return _no_op(
+                f"VLAN {vlan_id} already trunk-configured on all target interfaces on {device_name}."
+            )
+
+        reason_parts = []
+        if changes.vlans_to_create:
+            reason_parts.append(f"VLAN {vlan_id} must be created on {device_name}")
+        if changes.ports_to_update:
+            reason_parts.append(
+                f"{len(changes.ports_to_update)} interface(s) require trunk update: {', '.join(changes.ports_to_update)}"
+            )
+
+        return _apply("; ".join(reason_parts) + ".", device_changes)
+
     if intent_type in {"create_vlan", "delete_vlan", "set_native_vlan", "create_or_update_svi", "check_vlan_state"}:
         return _blocked(
             f"VLAN intent_type '{intent_type}' is not yet implemented in evaluate_intent."
@@ -88,9 +147,10 @@ def _evaluate_vlan_intent(
     return _blocked(f"Unsupported VLAN intent_type '{intent_type}'.")
 
 
-_DOMAIN_EVALUATORS: dict[str, Callable[..., dict]] = {
+_DOMAIN_EVALUATORS: dict[str, Callable[..., PlanDecision]] = {
     "vlan": _evaluate_vlan_intent,
 }
+
 
 def evaluate_intent_state(
     run_id: str,
@@ -99,17 +159,11 @@ def evaluate_intent_state(
     site: str,
     device_names: list[str],
     desired_state: dict | None = None,
-) -> dict:
-    """
-    Evaluate whether a normalized intent is already satisfied, requires changes,
+) -> PlanDecision:
+    """Evaluate whether a normalized intent is already satisfied, requires changes,
     or should be blocked based on current inventory state.
 
-    Returns a PlanDecision-shaped dict:
-    {
-        "decision": "apply" | "no_op" | "blocked",
-        "reason": str,
-        "diff": dict,
-    }
+    Returns a PlanDecision with list[DeviceChange] diff.
     """
 
     desired_state = desired_state or {}

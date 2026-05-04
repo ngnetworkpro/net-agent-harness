@@ -55,6 +55,23 @@ class RollbackPlan(BaseModel):
     )
 
 
+class VlanChange(BaseModel):
+    vlans_to_create: list[int] = Field(
+        default_factory=list,
+        description="VLAN IDs that must be created on the target device",
+    )
+    ports_to_update: list[str] = Field(
+        default_factory=list,
+        description="Interface names whose VLAN configuration must be updated",
+    )
+
+
+class DeviceChange(BaseModel):
+    device: str = Field(description="Hostname of the target device")
+    domain: NetworkDomain = Field(description="Network domain: vlan, acl, routing, etc.")
+    changes: VlanChange = Field(description="Typed change payload for the domain")
+
+
 class VlanDiff(BaseModel):
     vlans_to_create: list[int] = Field(
         default_factory=list,
@@ -73,7 +90,9 @@ class PlanDecision(BaseModel):
     reason: str = Field(
         description="Human-readable explanation of the decision"
     )
-    diff: VlanDiff
+    diff: list[DeviceChange] = Field(
+        description="List of device-specific changes to apply",
+    )
 
 
 class PlannedChange(BaseModel):
