@@ -40,6 +40,9 @@ intents:
   - name: provision_vlan_trunk
     description: "Composite intent: create a VLAN if needed, configure the interface as a trunk, and allow the vlan on the trunk interface."
     required_fields: [vlan_id, target_interfaces]
+  - name: provision_access_port
+    description: "Composite intent: create a VLAN if needed, and configure the interface as an access port."
+    required_fields: [vlan_id, target_interfaces]
   - name: check_vlan_state
     description: "Inspect VLAN presence or VLAN-related interface state without making changes."
     required_fields: [vlan_id]
