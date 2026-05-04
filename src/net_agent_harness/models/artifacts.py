@@ -3,6 +3,7 @@ from typing import Literal, Optional
 from enum import Enum
 from .common import ArtifactMeta
 from .enums import ValidationStatus, SwitchportMode, AllowedVlansMode, NetworkDomain
+from .changes import VlanSpec
 
 
 class ConfigSnippet(BaseModel):
@@ -21,7 +22,7 @@ class ConfigRender(BaseModel):
 
 class VlanRenderInput(BaseModel):
     intent_type: Literal["set_access_vlan", "provision_vlan_trunk"]
-    vlans_to_create: list[int]
+    vlans_to_create: list[VlanSpec]
     ports_to_update: list[str]
     target_device: str
     vlan_name: Optional[str] = None

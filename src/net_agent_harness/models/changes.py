@@ -55,10 +55,15 @@ class RollbackPlan(BaseModel):
     )
 
 
+class VlanSpec(BaseModel):
+    id: int = Field(description="VLAN ID")
+    name: str = Field(default="", description="VLAN name, empty if not specified")
+
+
 class VlanChange(BaseModel):
-    vlans_to_create: list[int] = Field(
+    vlans_to_create: list[VlanSpec] = Field(
         default_factory=list,
-        description="VLAN IDs that must be created on the target device",
+        description="VLANs that must be created on the target device",
     )
     ports_to_update: list[str] = Field(
         default_factory=list,

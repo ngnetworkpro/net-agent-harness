@@ -6,7 +6,7 @@ making them trivially testable and safe to call from any layer.
 
 from ..models.inventory import DeviceInfo, InterfaceInfo
 from ..models.enums import SwitchportMode, AllowedVlansMode, NetworkDomain
-from ..models.changes import DeviceChange, VlanChange
+from ..models.changes import DeviceChange, VlanChange, VlanSpec
 
 
 def compute_vlan_diff(intent: dict, current_state: DeviceInfo) -> list[DeviceChange]:
@@ -41,7 +41,7 @@ def compute_vlan_diff(intent: dict, current_state: DeviceInfo) -> list[DeviceCha
                     device="switch-01",
                     domain=NetworkDomain.VLAN,
                     changes=VlanChange(
-                        vlans_to_create=[<int>, ...],
+                        vlans_to_create=[VlanSpec(id=220, name="Finance"), ...],
                         ports_to_update=["<iface_name>", ...],
                     ),
                 )
@@ -53,18 +53,19 @@ def compute_vlan_diff(intent: dict, current_state: DeviceInfo) -> list[DeviceCha
     vlan_id: int = intent["vlan_id"]
     target_names: list[str] = list(intent.get("target_interfaces") or [])
     mode: str = intent.get("mode", "trunk").lower()
+    vlan_name: str = intent.get("vlan_name", "")
     vlan_label: str = (
-        f"VLAN {vlan_id} ({intent['vlan_name']})"
-        if intent.get("vlan_name")
+        f"VLAN {vlan_id} ({vlan_name})"
+        if vlan_name
         else f"VLAN {vlan_id}"
     )
 
-    vlans_to_create: list[int] = []
+    vlans_to_create: list[VlanSpec] = []
     ports_to_update: list[str] = []
     unknown_interfaces: list[str] = []
 
     if not vlan_exists(current_state, vlan_id):
-        vlans_to_create.append(vlan_id)
+        vlans_to_create.append(VlanSpec(id=vlan_id, name=vlan_name))
 
     iface_map: dict[str, InterfaceInfo] = {
         iface.name: iface for iface in current_state.interfaces
