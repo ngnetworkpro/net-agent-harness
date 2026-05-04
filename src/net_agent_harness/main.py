@@ -8,13 +8,14 @@ from .agents.change_planner import change_planner
 from .agents.config_render_agent import change_render_agent
 from .orchestration.stream_utils import run_agent_with_spinner
 from .config import settings
-from .models.artifacts import ConfigRender, VlanRenderInput
+from .models.artifacts import ConfigRender, RenderRequest
 from .models.changes import ChangeRequest, PlannedChange, PlanDecision
 from .models.common import ArtifactMeta
 from datetime import timezone, datetime
 from .models.enums import RunStage
 from .orchestration.coordinator import StageCoordinator
 from .orchestration.run_context import RunContextData
+from .orchestration.build_render import build_render_input
 from .services.artifact_store import ArtifactStore
 from .services.run_store import RunStore
 from .services.run_progress_reporter import RunProgressReporter
@@ -206,36 +207,15 @@ async def _async_render(change_request: ChangeRequest) -> None:
     ensure_renderable(change_request)
     artifact_store = ArtifactStore(get_runs_root())
     run_store = RunStore(get_runs_root())
+    run_stage = RunStage.RENDER
     reporter = RunProgressReporter(run_store, change_request.meta.run_id)
-    reporter.update("render", "running", "🔧 Rendering configuration...")
+    reporter.update(run_stage.value, "running", "🔧 Rendering configuration...")
 
     plan_decision = change_request.plan_decision
     if plan_decision is None:
         raise ValueError("plan_decision is required for rendering")
 
-    device_names = change_request.scope.device_names or ["unknown-device"]
-    primary_device = device_names[0]
-    intent = change_request.requested_change.intent.lower()
-    desired_state = change_request.requested_change.desired_state
-
-    if "access" in intent and "trunk" not in intent:
-        intent_type = "set_access_vlan"
-        mode = "access"
-    elif "trunk" in intent or "provision_vlan_trunk" in intent:
-        intent_type = "provision_vlan_trunk"
-        mode = "trunk"
-    else:
-        intent_type = "set_access_vlan"
-        mode = "access"
-
-    render_input = VlanRenderInput(
-        intent_type=intent_type,
-        vlans_to_create=plan_decision.diff.vlans_to_create,
-        ports_to_update=plan_decision.diff.ports_to_update,
-        target_device=primary_device,
-        vlan_name=desired_state.get("vlan_name"),
-        mode=mode,
-    )
+    render_input = build_render_input(change_request)
 
     render_result = await run_agent_with_spinner(
         agent=change_render_agent,

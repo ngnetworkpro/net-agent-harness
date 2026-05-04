@@ -1,9 +1,10 @@
 from pathlib import Path
+import asyncio
 from ..models.artifacts import ConfigRender, ValidationReport
 from ..models.changes import ChangeRequest
 from ..services.artifact_store import ArtifactStore
 from ..services.run_store import RunStore
-from ..tools.config_tools import build_stub_config_render
+from ..tools.config_tools import render_vlan_config
 from ..tools.validation_tools import validate_config_render
 
 
@@ -15,7 +16,7 @@ class StageCoordinator:
     def render(self, change_request: ChangeRequest) -> tuple[ConfigRender, Path]:
         if self.run_store:
             self.run_store.update_stage(change_request.meta.run_id, 'render', 'running')
-        render_result = build_stub_config_render(change_request)
+        render_result = asyncio.run(render_vlan_config(change_request))
         path = self.artifact_store.save_model(change_request.meta.run_id, 'config_render', render_result)
         if self.run_store:
             self.run_store.update_stage(change_request.meta.run_id, 'render', 'completed', artifact='config_render')
