@@ -57,7 +57,7 @@ def _evaluate_vlan_intent(
     vlan_name = desired_state.get("vlan_name")
     target_interfaces = desired_state.get("target_interfaces", [])
 
-    if intent_type in {"set_access_vlan"}:
+    if intent_type in {"set_access_vlan", "provision_access_port"}:
         if vlan_id is None:
             return _blocked("desired_state.vlan_id is required for set_access_vlan.")
 
