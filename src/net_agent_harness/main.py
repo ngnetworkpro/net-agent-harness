@@ -23,6 +23,7 @@ from .tools.inventory_tools import resolve_from_scope
 from .tools.evaluation import evaluate_intent_state
 from .tools.validation_tools import validate_config_render 
 
+from .orchestration.desired_state_normalizer import normalize_desired_state
 from .orchestration.intent_router import route_intent
 from .orchestration.domain_loader import load_domain_context, DomainLoadError
 
@@ -154,13 +155,17 @@ async def _async_plan(request: str, operator: str = "local-user"):
     
     reporter.update(run_stage.value, "running", " 🔍 Evaluating intent state...")
     if resolved_targets:
+        normalized_desired_state = normalize_desired_state(
+            route.domain,
+            planned.requested_change.desired_state,
+        )
         plan_decision = evaluate_intent_state(
             run_id=run_id,
             domain=route.domain.value, 
             intent_type=planned.requested_change.intent,
             site=planned.scope.site,
             device_names=[t.name for t in resolved_targets],
-            desired_state=planned.requested_change.desired_state,
+            desired_state=normalized_desired_state,
         )
     # 4. ENFORCE
     reporter.update(run_stage.value, "running", "🔧 Enforcing plan decision...")

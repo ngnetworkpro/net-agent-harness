@@ -30,7 +30,7 @@ async def render_vlan_config(change_request: ChangeRequest) -> ConfigRender:
         vlans_to_create=plan_decision.diff.vlans_to_create,
         ports_to_update=plan_decision.diff.ports_to_update,
         target_device=primary_device,
-        vlan_name=desired_state.get("vlan_name"),
+        vlan_name=desired_state.get("vlans", [{}])[0].get("name") if desired_state.get("vlans") else None,
         mode=mode,
     )
 

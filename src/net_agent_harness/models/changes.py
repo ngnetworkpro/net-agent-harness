@@ -60,14 +60,20 @@ class VlanSpec(BaseModel):
     name: str = Field(default="", description="VLAN name, empty if not specified")
 
 
+class PortSpec(BaseModel):
+    interface: str = Field(description="Interface name, e.g., 'ge-0/0/1'")
+    vlan_id: int = Field(description="VLAN ID to assign")
+    mode: str = Field(description="'access' or 'trunk'")
+
+
 class VlanChange(BaseModel):
     vlans_to_create: list[VlanSpec] = Field(
         default_factory=list,
         description="VLANs that must be created on the target device",
     )
-    ports_to_update: list[str] = Field(
+    ports_to_update: list[PortSpec] = Field(
         default_factory=list,
-        description="Interface names whose VLAN configuration must be updated",
+        description="Interfaces whose VLAN configuration must be updated",
     )
 
 

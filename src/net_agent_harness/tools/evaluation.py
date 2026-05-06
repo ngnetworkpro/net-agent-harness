@@ -49,24 +49,29 @@ def _evaluate_vlan_intent(
     device = _load_device_from_inventory(run_id, site=site, device_name=device_name)
     if device is None:
         return _blocked(
-            f"Device '{device_name}' was not found in the inventory snapshot for site '{site}'. "
+            f"Device '{device_name}' was not found in the inventory snapshot for site '{site}. "
             "Verify the device name and site."
         )
 
-    vlan_id = desired_state.get("vlan_id")
-    vlan_name = desired_state.get("vlan_name")
-    target_interfaces = desired_state.get("target_interfaces", [])
+    vlans_list = desired_state.get("vlans", [])
+    interfaces_list = desired_state.get("interfaces", [])
+
+    if not vlans_list:
+        return _blocked("desired_state.vlans is required for VLAN operations.")
+
+    first_vlan = vlans_list[0]
+    vlan_id = first_vlan.get("vlan_id")
+    vlan_name = first_vlan.get("name", "")
 
     if intent_type in {"set_access_vlan", "provision_access_port"}:
         if vlan_id is None:
-            return _blocked("desired_state.vlan_id is required for set_access_vlan.")
+            return _blocked("vlan_id is required in desired_state.vlans[0] for set_access_vlan.")
 
         device_changes = compute_vlan_diff(
             intent={
                 "vlan_id": vlan_id,
-                "target_interfaces": target_interfaces,
-                "mode": "access",
                 "vlan_name": vlan_name,
+                "interfaces": interfaces_list,
             },
             current_state=device,
         )
@@ -85,20 +90,20 @@ def _evaluate_vlan_intent(
             reason_parts.append(f"VLAN {vlan_id} must be created on {device_name}")
         if changes.ports_to_update:
             reason_parts.append(
-                f"{len(changes.ports_to_update)} interface(s) require access update: {', '.join(changes.ports_to_update)}"
+                f"{len(changes.ports_to_update)} interface(s) require access update: {', '.join(p.interface for p in changes.ports_to_update)}"
             )
 
         return _apply("; ".join(reason_parts) + ".", device_changes)
 
     if intent_type in {"create_vlan"}:
         if vlan_id is None:
-            return _blocked("desired_state.vlan_id is required for create_vlan.")
+            return _blocked("vlan_id is required in desired_state.vlans[0] for create_vlan.")
 
         device_changes = compute_vlan_diff(
             intent={
                 "vlan_id": vlan_id,
-                "target_interfaces": [],
                 "vlan_name": vlan_name,
+                "interfaces": [],
             },
             current_state=device,
         )
@@ -111,14 +116,13 @@ def _evaluate_vlan_intent(
 
     if intent_type in {"update_trunk_allowed_vlans", "provision_vlan_trunk"}:
         if vlan_id is None:
-            return _blocked(f"desired_state.vlan_id is required for {intent_type}.")
+            return _blocked(f"vlan_id is required in desired_state.vlans[0] for {intent_type}.")
 
         device_changes = compute_vlan_diff(
             intent={
                 "vlan_id": vlan_id,
-                "target_interfaces": target_interfaces,
-                "mode": "trunk",
                 "vlan_name": vlan_name,
+                "interfaces": interfaces_list,
             },
             current_state=device,
         )
@@ -134,7 +138,7 @@ def _evaluate_vlan_intent(
             reason_parts.append(f"VLAN {vlan_id} must be created on {device_name}")
         if changes.ports_to_update:
             reason_parts.append(
-                f"{len(changes.ports_to_update)} interface(s) require trunk update: {', '.join(changes.ports_to_update)}"
+                f"{len(changes.ports_to_update)} interface(s) require trunk update: {', '.join(p.interface for p in changes.ports_to_update)}"
             )
 
         return _apply("; ".join(reason_parts) + ".", device_changes)

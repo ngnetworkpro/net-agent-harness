@@ -15,8 +15,8 @@ def build_vlan_render_input(change_request: ChangeRequest):
     vlan_ops = []
     interface_ops = []
     for change in change_request.plan_decision.diff:
-        if change.changes.vlans_to_create:
-            for vlan_spec in change.changes.vlans_to_create:
+        if change.plan_decision.diff.vlans:
+            for vlan_spec in change.plan_decision.diff.vlans:
                 vlan_ops.append(
                     VlanRenderOp(
                         vlan_id=vlan_spec.id,
@@ -28,7 +28,7 @@ def build_vlan_render_input(change_request: ChangeRequest):
 
         interface_ops = [
             VlanInterfaceRenderOp(
-                interface_name=change.changes.ports_to_update,
+                interface_name=[p.interface for p in change.plan_decision.diff.interfaces],
                 target=RenderTarget(name=change.device),
             )
         ]

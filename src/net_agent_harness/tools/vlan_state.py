@@ -6,7 +6,7 @@ making them trivially testable and safe to call from any layer.
 
 from ..models.inventory import DeviceInfo, InterfaceInfo
 from ..models.enums import SwitchportMode, AllowedVlansMode, NetworkDomain
-from ..models.changes import DeviceChange, VlanChange, VlanSpec
+from ..models.changes import DeviceChange, VlanChange, VlanSpec, PortSpec
 
 
 def compute_vlan_diff(intent: dict, current_state: DeviceInfo) -> list[DeviceChange]:
@@ -18,14 +18,14 @@ def compute_vlan_diff(intent: dict, current_state: DeviceInfo) -> list[DeviceCha
         A dict with the following keys:
 
         ``vlan_id`` *(int, required)*
-            The VLAN ID to provision.
-        ``target_interfaces`` *(list[str], required)*
-            Interface names that should carry the VLAN.
-        ``mode`` *(str, default "trunk")*
-            ``"trunk"`` or ``"access"`` — how the VLAN should be presented
-            on each target interface.
+            The VLAN ID to provision (used for VLAN creation check).
         ``vlan_name`` *(str | None, optional)*
             Human-readable label; used only in reason strings.
+        ``interfaces`` *(list[dict], optional)*
+            List of interface dicts, each with:
+            - ``name``: interface name
+            - ``switchport_mode``: "access" or "trunk"
+            - ``access_vlan``: VLAN ID for access ports
 
     current_state:
         The fully-populated ``DeviceInfo`` for the target device, including
@@ -42,7 +42,7 @@ def compute_vlan_diff(intent: dict, current_state: DeviceInfo) -> list[DeviceCha
                     domain=NetworkDomain.VLAN,
                     changes=VlanChange(
                         vlans_to_create=[VlanSpec(id=220, name="Finance"), ...],
-                        ports_to_update=["<iface_name>", ...],
+                        ports_to_update=[PortSpec(interface="ge-0/0/1", vlan_id=220, mode="access"), ...],
                     ),
                 )
             ]
@@ -51,9 +51,8 @@ def compute_vlan_diff(intent: dict, current_state: DeviceInfo) -> list[DeviceCha
         changes are required for this device.
     """
     vlan_id: int = intent["vlan_id"]
-    target_names: list[str] = list(intent.get("target_interfaces") or [])
-    mode: str = intent.get("mode", "trunk").lower()
     vlan_name: str = intent.get("vlan_name", "")
+    interfaces: list[dict] = intent.get("interfaces", [])
     vlan_label: str = (
         f"VLAN {vlan_id} ({vlan_name})"
         if vlan_name
@@ -61,7 +60,7 @@ def compute_vlan_diff(intent: dict, current_state: DeviceInfo) -> list[DeviceCha
     )
 
     vlans_to_create: list[VlanSpec] = []
-    ports_to_update: list[str] = []
+    ports_to_update: list[PortSpec] = []
     unknown_interfaces: list[str] = []
 
     if not vlan_exists(current_state, vlan_id):
@@ -71,23 +70,30 @@ def compute_vlan_diff(intent: dict, current_state: DeviceInfo) -> list[DeviceCha
         iface.name: iface for iface in current_state.interfaces
     }
 
-    for iface_name in target_names:
-        iface = iface_map.get(iface_name)
-        if iface is None:
+    for iface in interfaces:
+        iface_name = iface.get("name")
+        if not iface_name:
+            continue
+
+        iface_obj = iface_map.get(iface_name)
+        if iface_obj is None:
             unknown_interfaces.append(iface_name)
             continue
 
+        mode = iface.get("switchport_mode", "trunk").lower()
+        iface_vlan_id = iface.get("access_vlan") or vlan_id
+
         if mode == "trunk":
-            if iface.mode != SwitchportMode.TRUNK:
-                ports_to_update.append(iface_name)
-            elif not trunk_allows_vlan(iface, vlan_id):
-                ports_to_update.append(iface_name)
+            if iface_obj.mode != SwitchportMode.TRUNK:
+                ports_to_update.append(PortSpec(interface=iface_name, vlan_id=iface_vlan_id, mode=mode))
+            elif not trunk_allows_vlan(iface_obj, iface_vlan_id):
+                ports_to_update.append(PortSpec(interface=iface_name, vlan_id=iface_vlan_id, mode=mode))
 
         elif mode == "access":
-            if iface.mode != SwitchportMode.ACCESS:
-                ports_to_update.append(iface_name)
-            elif not access_vlan_matches(iface, vlan_id):
-                ports_to_update.append(iface_name)
+            if iface_obj.mode != SwitchportMode.ACCESS:
+                ports_to_update.append(PortSpec(interface=iface_name, vlan_id=iface_vlan_id, mode=mode))
+            elif not access_vlan_matches(iface_obj, iface_vlan_id):
+                ports_to_update.append(PortSpec(interface=iface_name, vlan_id=iface_vlan_id, mode=mode))
 
     device_change = DeviceChange(
         device=current_state.name,
