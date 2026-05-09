@@ -1,7 +1,7 @@
 from collections.abc import Callable
-from ..models.changes import DeviceChange, PlanDecision, VlanChange
+from ..models.changes import DeviceChange, PlanDecision, VlanChange, VlanSpec, PortSpec
 from ..models.enums import NetworkDomain, PlanDecisionType
-from ..tools.vlan_state import compute_vlan_diff
+from ..tools.vlan_state import compute_vlan_diff, vlan_exists
 
 
 def _blocked(reason: str) -> PlanDecision:
@@ -39,9 +39,32 @@ def _load_device_from_inventory(
     return next((d for d in snapshot.devices if d.name == device_name), None)
 
 
-def _evaluate_vlan_intent(
+def _merge_device_changes(all_changes: list[DeviceChange]) -> list[DeviceChange]:
+    if not all_changes:
+        return []
+    if len(all_changes) == 1:
+        return all_changes
+
+    merged_vlans: list[VlanSpec] = []
+    merged_ports: list[PortSpec] = []
+    device_name = all_changes[0].device
+
+    for dc in all_changes:
+        merged_vlans.extend(dc.changes.vlans_to_create)
+        merged_ports.extend(dc.changes.ports_to_update)
+
+    return [DeviceChange(
+        device=device_name,
+        domain=NetworkDomain.VLAN,
+        changes=VlanChange(
+            vlans_to_create=merged_vlans,
+            ports_to_update=merged_ports,
+        ),
+    )]
+
+
+def _evaluate_vlan_operations(
     run_id: str,
-    intent_type: str,
     site: str,
     device_name: str,
     desired_state: dict,
@@ -53,113 +76,127 @@ def _evaluate_vlan_intent(
             "Verify the device name and site."
         )
 
-    vlans_list = desired_state.get("vlans", [])
-    interfaces_list = desired_state.get("interfaces", [])
+    operations = desired_state.get("operations", [])
+    if not operations:
+        return _blocked("desired_state.operations is required for VLAN operations.")
 
-    if not vlans_list:
-        return _blocked("desired_state.vlans is required for VLAN operations.")
+    all_device_changes: list[DeviceChange] = []
+    reason_parts: list[str] = []
 
-    first_vlan = vlans_list[0]
-    vlan_id = first_vlan.get("vlan_id")
-    vlan_name = first_vlan.get("name", "")
+    vlan_ops = [op for op in operations if op.get("object_type") == "vlan"]
+    interface_ops = [op for op in operations if op.get("object_type") == "interface"]
 
-    if intent_type in {"set_access_vlan", "provision_access_port"}:
-        if vlan_id is None:
-            return _blocked("vlan_id is required in desired_state.vlans[0] for set_access_vlan.")
+    for vlan_op in vlan_ops:
+        operation = vlan_op.get("operation")
+        attrs = vlan_op.get("attributes", {})
+        vlan_id = attrs.get("vlan_id")
+        vlan_name = attrs.get("name", "")
 
-        device_changes = compute_vlan_diff(
-            intent={
-                "vlan_id": vlan_id,
-                "vlan_name": vlan_name,
-                "interfaces": interfaces_list,
-            },
-            current_state=device,
-        )
-
-        if not device_changes:
-            return _no_op(f"No changes required for {device_name}.")
-
-        changes = device_changes[0].changes
-        if not changes.vlans_to_create and not changes.ports_to_update:
-            return _no_op(
-                f"VLAN {vlan_id} already access-configured on all target interfaces on {device_name}."
+        if operation == "ensure_present":
+            if vlan_id is None:
+                return _blocked("vlan_id is required for vlan ensure_present operation.")
+            device_changes = compute_vlan_diff(
+                intent={
+                    "vlan_id": vlan_id,
+                    "vlan_name": vlan_name,
+                    "interfaces": [],
+                },
+                current_state=device,
             )
+            changes = device_changes[0].changes
+            if changes.vlans_to_create:
+                all_device_changes.extend(device_changes)
+                reason_parts.append(f"VLAN {vlan_id} must be created on {device_name}")
+        elif operation == "ensure_absent":
+            if vlan_id is None:
+                return _blocked("vlan_id is required for vlan ensure_absent operation.")
+            if vlan_exists(device, vlan_id):
+                all_device_changes.append(DeviceChange(
+                    device=device_name,
+                    domain=NetworkDomain.VLAN,
+                    changes=VlanChange(
+                        vlans_to_create=[],
+                        ports_to_update=[],
+                    ),
+                ))
+                reason_parts.append(f"VLAN {vlan_id} must be deleted from {device_name}")
+        else:
+            return _blocked(f"Unsupported vlan operation '{operation}'.")
 
-        reason_parts = []
-        if changes.vlans_to_create:
-            reason_parts.append(f"VLAN {vlan_id} must be created on {device_name}")
-        if changes.ports_to_update:
-            reason_parts.append(
-                f"{len(changes.ports_to_update)} interface(s) require access update: {', '.join(p.interface for p in changes.ports_to_update)}"
+    for iface_op in interface_ops:
+        operation = iface_op.get("operation")
+        attrs = iface_op.get("attributes", {})
+        iface_name = attrs.get("name")
+        access_vlan = attrs.get("access_vlan")
+        native_vlan = attrs.get("native_vlan")
+        allowed_vlans = attrs.get("allowed_vlans", [])
+
+        if iface_name is None:
+            return _blocked("interface name is required for interface operations.")
+
+        if operation == "set_access_vlan":
+            if access_vlan is None:
+                return _blocked("access_vlan is required for set_access_vlan operation.")
+            device_changes = compute_vlan_diff(
+                intent={
+                    "vlan_id": access_vlan,
+                    "vlan_name": "",
+                    "interfaces": [{
+                        "name": iface_name,
+                        "switchport_mode": "access",
+                        "access_vlan": access_vlan,
+                    }],
+                },
+                current_state=device,
             )
-
-        return _apply("; ".join(reason_parts) + ".", device_changes)
-
-    if intent_type in {"create_vlan"}:
-        if vlan_id is None:
-            return _blocked("vlan_id is required in desired_state.vlans[0] for create_vlan.")
-
-        device_changes = compute_vlan_diff(
-            intent={
-                "vlan_id": vlan_id,
-                "vlan_name": vlan_name,
-                "interfaces": [],
-            },
-            current_state=device,
-        )
-
-        changes = device_changes[0].changes
-        if not changes.vlans_to_create:
-            return _no_op(f"VLAN {vlan_id} already exists on {device_name}.")
-
-        return _apply(f"VLAN {vlan_id} must be created on {device_name}.", device_changes)
-
-    if intent_type in {"update_trunk_allowed_vlans", "provision_vlan_trunk"}:
-        if vlan_id is None:
-            return _blocked(f"vlan_id is required in desired_state.vlans[0] for {intent_type}.")
-
-        device_changes = compute_vlan_diff(
-            intent={
-                "vlan_id": vlan_id,
-                "vlan_name": vlan_name,
-                "interfaces": interfaces_list,
-            },
-            current_state=device,
-        )
-
-        changes = device_changes[0].changes
-        if not changes.vlans_to_create and not changes.ports_to_update:
-            return _no_op(
-                f"VLAN {vlan_id} already trunk-configured on all target interfaces on {device_name}."
+            changes = device_changes[0].changes
+            if changes.ports_to_update:
+                all_device_changes.extend(device_changes)
+                reason_parts.append(
+                    f"Interface {iface_name} requires access VLAN {access_vlan} update on {device_name}"
+                )
+        elif operation == "set_trunk":
+            device_changes = compute_vlan_diff(
+                intent={
+                    "vlan_id": access_vlan or 1,
+                    "vlan_name": "",
+                    "interfaces": [{
+                        "name": iface_name,
+                        "switchport_mode": "trunk",
+                        "access_vlan": access_vlan,
+                    }],
+                },
+                current_state=device,
             )
+            changes = device_changes[0].changes
+            if changes.ports_to_update:
+                all_device_changes.extend(device_changes)
+                reason_parts.append(f"Interface {iface_name} requires trunk update on {device_name}")
+        else:
+            return _blocked(f"Unsupported interface operation '{operation}'.")
 
-        reason_parts = []
-        if changes.vlans_to_create:
-            reason_parts.append(f"VLAN {vlan_id} must be created on {device_name}")
-        if changes.ports_to_update:
-            reason_parts.append(
-                f"{len(changes.ports_to_update)} interface(s) require trunk update: {', '.join(p.interface for p in changes.ports_to_update)}"
-            )
+    if not all_device_changes:
+        return _no_op(f"No changes required for {device_name}.")
 
-        return _apply("; ".join(reason_parts) + ".", device_changes)
+    merged_changes = _merge_device_changes(all_device_changes)
 
-    if intent_type in {"create_vlan", "delete_vlan", "set_native_vlan", "create_or_update_svi", "check_vlan_state"}:
-        return _blocked(
-            f"VLAN intent_type '{intent_type}' is not yet implemented in evaluate_intent."
-        )
+    merged_vlans = merged_changes[0].changes.vlans_to_create if merged_changes else []
+    merged_ports = merged_changes[0].changes.ports_to_update if merged_changes else []
 
-    return _blocked(f"Unsupported VLAN intent_type '{intent_type}'.")
+    if not merged_vlans and not merged_ports:
+        return _no_op(f"No changes required for {device_name}.")
+
+    return _apply("; ".join(reason_parts) + ".", merged_changes)
 
 
 _DOMAIN_EVALUATORS: dict[str, Callable[..., PlanDecision]] = {
-    "vlan": _evaluate_vlan_intent,
+    "vlan": _evaluate_vlan_operations,
 }
 
 
 def evaluate_intent_state(
     run_id: str,
     domain: str,
-    intent_type: str,
     site: str,
     device_names: list[str],
     desired_state: dict | None = None,
@@ -190,7 +227,6 @@ def evaluate_intent_state(
 
     return evaluator(
         run_id=run_id,
-        intent_type=intent_type,
         site=site,
         device_name=device_names[0],
         desired_state=desired_state,

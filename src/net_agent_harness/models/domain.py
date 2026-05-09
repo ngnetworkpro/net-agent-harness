@@ -15,7 +15,7 @@ class IntentSpec:
 @dataclass
 class FewShotExample:
     user: str
-    normalized_intent: str
+    normalized_intent: str | None = None
     extra: dict = field(default_factory=dict)
 
 @dataclass

@@ -28,7 +28,7 @@ def load_domain_context(domain: NetworkDomain) -> DomainContext:
     examples = [
         FewShotExample(
             user=e["user"],
-            normalized_intent=e["normalized_intent"],
+            normalized_intent=e.get("normalized_intent"),
             extra={k: v for k, v in e.items() if k not in ("user", "normalized_intent")}
         )
         for e in domain_data.get("examples", [])

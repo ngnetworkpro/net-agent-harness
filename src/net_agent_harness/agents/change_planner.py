@@ -62,8 +62,10 @@ def planner_system_prompt(ctx: RunContext[RunContextData]) -> str:
         "- devices ",
         "- interfaces ",
         "- scope ",
-        "- desired_state: ",
-        "- include only fields necessary to express the desired end state "
+        "- desired_state: { operations: [{object_type: str, operation: str, attributes: dict}] } ",
+        "- Group operations by object_type: vlan, interface, svi, etc. ",
+        "- Operations: ensure_present, ensure_absent, set_access_vlan, set_trunk, update_trunk_allowed_vlans, etc. ",
+        "- For each operation, provide only the attributes needed (e.g., vlan_id, name for vlan; name, access_vlan for interface). ",
         "assumptions: ",
         "- list assumptions explicitly "
         "missing_information: ",
@@ -149,6 +151,7 @@ async def _enforce_plan_decision(
             ]
 
     return output
+
 
 @change_planner.tool
 async def get_inventory(ctx: RunContext[RunContextData], site: str):

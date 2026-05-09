@@ -71,8 +71,11 @@ def compute_vlan_diff(intent: dict, current_state: DeviceInfo) -> list[DeviceCha
     }
 
     for iface in interfaces:
-        iface_name = iface.get("name")
-        if not iface_name:
+        if "interface_id" in iface.keys():
+            iface_name = iface.get("interface_id")
+        elif "name" in iface.keys():
+            iface_name = iface.get("name")
+        else:
             continue
 
         iface_obj = iface_map.get(iface_name)

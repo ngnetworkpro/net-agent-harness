@@ -162,7 +162,6 @@ async def _async_plan(request: str, operator: str = "local-user"):
         plan_decision = evaluate_intent_state(
             run_id=run_id,
             domain=route.domain.value, 
-            intent_type=planned.requested_change.intent,
             site=planned.scope.site,
             device_names=[t.name for t in resolved_targets],
             desired_state=normalized_desired_state,

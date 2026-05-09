@@ -75,27 +75,51 @@ rules:
 examples:
   - user: "Add VLAN 200 to trunk port Gi0/1 on sw1 at HQ"
     normalized_intent: "provision_vlan_trunk"
-    vlan_id: 200
-    target_interfaces: ["Gi0/1"]
-    device: "sw1"
-    site: "HQ"
+    desired_state:
+      operations:
+        - object_type: vlan
+          operation: ensure_present
+          attributes:
+            vlan_id: 200
+            name: ""
+        - object_type: interface
+          operation: set_trunk
+          attributes:
+            name: Gi0/1
+            allowed_vlans: [200]
 
   - user: "Put port Gi0/24 in VLAN 10 on sw1 at Branch1"
     normalized_intent: "set_access_vlan"
-    vlan_id: 10
-    target_interfaces: ["Gi0/24"]
-    device: "sw1"
-    site: "Branch1"
+    desired_state:
+      operations:
+        - object_type: vlan
+          operation: ensure_present
+          attributes:
+            vlan_id: 10
+            name: ""
+        - object_type: interface
+          operation: set_access_vlan
+          attributes:
+            name: Gi0/24
+            access_vlan: 10
 
   - user: "Set the native VLAN to 99 on trunk Gi0/1 at HQ"
     normalized_intent: "set_native_vlan"
-    vlan_id: 99
-    target_interfaces: ["Gi0/1"]
-    site: "HQ"
+    desired_state:
+      operations:
+        - object_type: interface
+          operation: set_trunk
+          attributes:
+            name: Gi0/1
+            native_vlan: 99
 
   - user: "Create a gateway 10.20.30.1/24 for VLAN 30 on fw1"
     normalized_intent: "create_or_update_svi"
-    vlan_id: 30
-    ip_address: "10.20.30.1"
-    prefix_length: 24
-    device: "fw1"
+    desired_state:
+      operations:
+        - object_type: svi
+          operation: ensure_present
+          attributes:
+            vlan_id: 30
+            ip_address: "10.20.30.1"
+            prefix_length: 24

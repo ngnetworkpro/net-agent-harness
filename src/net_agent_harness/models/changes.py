@@ -4,6 +4,12 @@ from .enums import ChangeRisk, TargetScope, PlanDecisionType, NetworkDomain
 from typing import Any
 
 
+class DesiredStateOperation(BaseModel):
+    object_type: str = Field(description="Object type: vlan, interface, svi, etc.")
+    operation: str = Field(description="Operation: ensure_present, ensure_absent, set_access_vlan, etc.")
+    attributes: dict[str, Any] = Field(default_factory=dict, description="Operation-specific attributes")
+
+
 class ResolvedTarget(BaseModel):
     name: str = Field(description="Concrete device name resolved from inventory")
     site: str | None = Field(default=None, description="Resolved site for the device")
