@@ -84,3 +84,11 @@ class ValidationReport(BaseModel):
     checks_run: list[str] = Field(default_factory=list)
     findings: list[Finding] = Field(default_factory=list)
     approved_for_execution: bool = False
+
+
+class ExecutionResult(BaseModel):
+    meta: ArtifactMeta
+    backend: str
+    status: str
+    detail: str
+    reference: str | None = None
