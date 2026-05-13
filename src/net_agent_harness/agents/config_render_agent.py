@@ -48,16 +48,22 @@ You receive a RenderRequest with:
 1. Do NOT re-call the planner or reinterpret the original request.
 2. Only consume the payload fields above.
 3. Render safe, reviewable candidate config only. Do not claim anything was executed.
+4. Do not invent requirements not present in the payload (e.g., VLAN naming patterns, mandatory port assignments).
+5. The summary field MUST be derived deterministically from the payload. Use this exact format:
+   - For VLAN creation: "Rendered VLAN <id> (<name>) for <device> — <operation>"
+   - For interface changes: "Rendered <mode> port <interface> on <device> — <operation>"
+   - For mixed: "Rendered <N> VLAN(s) and <M> interface(s) for <devices>"
+   Do NOT use placeholder text like "Awaiting Input" or "Render complete".
 
 ## Output Format
-Produce a ConfigRender with two snippet types per device:
+Produce a ConfigRender with the following snippet types per device:
 
 1. API payload (abstract structure for later translation):
    - vlans: [{{"id": <int>, "name": <str>}}]
-   - port_configs: [{{"port": <str>, "mode": <str>, "access_vlan": <int> or "allowed_vlans_mode": "all"}}]
+   - port_configs: [{{"port": <str>, "mode": <str>, "access_vlan": <int>, "native_vlan": <int>, "allowed_vlans_mode": "all"}}]
 
 2. CLI fallback commands (Juniper Mist style):
-   - VLAN creation: 'vlan <id>' + 'name VLAN_<id>'
+   - VLAN creation: 'vlan <id>' + 'name <name>'
    - Access port: 'set interfaces <port> unit 0 family ethernet-switching vlan members <vlan_id>'
    - Trunk port: 'set interfaces <port> unit 0 family ethernet-switching vlan members all'
    (Use 'all' for allowed_vlans_mode, NOT numeric expansion like '1-4094')
@@ -66,8 +72,11 @@ Produce a ConfigRender with two snippet types per device:
 For trunk ports, always use allowed_vlans_mode='all' in API payloads.
 In CLI, use 'switchport trunk allowed vlans all' — never expand VLANs numerically.
 
-## Warnings
-Include warnings when assumptions are required or when configuration is non-standard."""
+## Warnings Policy
+Only include warnings when:
+- There is a real ambiguity in the payload that affects rendering
+- A planned VLAN/interface could not be rendered due to missing data
+- Do NOT warn about missing optional data (e.g., port assignments when only VLAN creation was requested)"""
     ]
 
     return "\n\n".join(preamble)

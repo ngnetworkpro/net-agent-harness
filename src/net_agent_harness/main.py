@@ -233,12 +233,15 @@ async def _async_render(change_request: ChangeRequest) -> None:
     print({'run_id': change_request.meta.run_id, 'artifact_path': str(artifact_path), 'output': render_result.model_dump(mode='json')})
 
 
-def _run_validate(config_render: ConfigRender) -> None:
+def _run_validate(
+        config_render: ConfigRender,
+        change_request: ChangeRequest | None = None,
+    ) -> None:
     """Core validate logic, callable from CLI or programmatically."""
     artifact_store = ArtifactStore(get_runs_root())
     run_store = RunStore(get_runs_root())
     run_store.update_stage(config_render.meta.run_id, 'validate', 'running')
-    validation_result = validate_config_render(config_render)
+    validation_result = validate_config_render(config_render, change_request)
     artifact_path = artifact_store.save_model(config_render.meta.run_id, 'validation_report', validation_result)
     final_status = 'completed' if validation_result.overall_status.value == 'pass' else validation_result.overall_status.value
     run_store.update_stage(
@@ -281,15 +284,12 @@ def run_stages(artifact_path: Path):
     change_request = ChangeRequest.model_validate_json(artifact_path.read_text())
     ensure_renderable(change_request)
     run_id = change_request.meta.run_id
-    # Render config
     asyncio.run(_async_render(change_request))
-    # Validate
-    # Note: run_stages passes a ChangeRequest here, so we need to build the render first
-    # validate operates on a ConfigRender; for the pipeline, reload from disk
     render_artifact = get_runs_root() / run_id / 'config_render.json'
-    _run_validate(ConfigRender.model_validate_json(render_artifact.read_text()))
-    # # Finalize
-    # finalize(change_request)
+    _run_validate(
+        ConfigRender.model_validate_json(render_artifact.read_text()),
+        change_request,
+    )
     print(f"✅ Full pipeline complete: {run_id}")
 
 

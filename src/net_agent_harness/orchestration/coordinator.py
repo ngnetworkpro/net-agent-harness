@@ -4,10 +4,11 @@ from ..models.artifacts import ConfigRender, ValidationReport, ExecutionResult
 from ..models.changes import ChangeRequest
 from ..services.artifact_store import ArtifactStore
 from ..services.run_store import RunStore
-from ..tools.config_tools import render_vlan_config
 from ..tools.validation_tools import validate_config_render
 from ..policies.approvals import get_backend_adapter, request_approval
 from ..config import settings
+from ..agents.config_render_agent import change_render_agent
+from ..orchestration.build_render import build_render_input
 
 
 class StageCoordinator:
@@ -18,16 +19,31 @@ class StageCoordinator:
     def render(self, change_request: ChangeRequest) -> tuple[ConfigRender, Path]:
         if self.run_store:
             self.run_store.update_stage(change_request.meta.run_id, 'render', 'running')
-        render_result = asyncio.run(render_vlan_config(change_request))
+
+        render_input = build_render_input(change_request)
+        render_result = asyncio.run(
+            change_render_agent.run(
+                prompt="",
+                deps=render_input,
+            )
+        )
+
+        render_result.meta.run_id = change_request.meta.run_id
+        ConfigRender.model_validate(render_result.model_dump())
         path = self.artifact_store.save_model(change_request.meta.run_id, 'config_render', render_result)
+
         if self.run_store:
             self.run_store.update_stage(change_request.meta.run_id, 'render', 'completed', artifact='config_render')
         return render_result, path
 
-    def validate(self, config_render: ConfigRender) -> tuple[ValidationReport, Path]:
+    def validate(
+        self,
+        config_render: ConfigRender,
+        change_request: ChangeRequest | None = None,
+    ) -> tuple[ValidationReport, Path]:
         if self.run_store:
             self.run_store.update_stage(config_render.meta.run_id, 'validate', 'running')
-        validation_result = validate_config_render(config_render)
+        validation_result = validate_config_render(config_render, change_request)
         path = self.artifact_store.save_model(config_render.meta.run_id, 'validation_report', validation_result)
         final_status = 'completed' if validation_result.overall_status.value == 'pass' else validation_result.overall_status.value
         if self.run_store:
@@ -74,7 +90,7 @@ class StageCoordinator:
 
     def run_pipeline(self, change_request: ChangeRequest) -> dict:
         render_result, render_path = self.render(change_request)
-        validation_result, validation_path = self.validate(render_result)
+        validation_result, validation_path = self.validate(render_result, change_request)
         summary = {
             'run_id': change_request.meta.run_id,
             'artifacts': {
