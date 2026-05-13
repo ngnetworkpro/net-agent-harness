@@ -42,17 +42,20 @@ class StageCoordinator:
 
     def execute(
         self,
-        config_render: ConfigRender,
+        change_request: ChangeRequest,
         validation_report: ValidationReport,
     ) -> tuple[ExecutionResult, Path]:
-        run_id = config_render.meta.run_id
+        run_id = change_request.meta.run_id
         if self.run_store:
             self.run_store.update_stage(run_id, 'approval_pending', 'running')
 
         if not validation_report.approved_for_execution:
             raise RuntimeError("Execution blocked: validation did not approve this change.")
 
-        approved = request_approval(config_render)
+        adapter = get_backend_adapter(settings)
+        backend_render = adapter.render(change_request)
+
+        approved = request_approval(backend_render)
         if not approved:
             if self.run_store:
                 self.run_store.update_stage(run_id, 'approval_pending', 'rejected')
@@ -61,8 +64,7 @@ class StageCoordinator:
         if self.run_store:
             self.run_store.update_stage(run_id, 'execute', 'running')
 
-        adapter = get_backend_adapter(settings)
-        result = adapter.apply(config_render)
+        result = adapter.apply(backend_render)
         path = self.artifact_store.save_model(run_id, 'execution_result', result)
 
         if self.run_store:
@@ -86,7 +88,7 @@ class StageCoordinator:
 
         if validation_result.approved_for_execution:
             try:
-                execution_result, execution_path = self.execute(render_result, validation_result)
+                execution_result, execution_path = self.execute(change_request, validation_result)
                 summary['artifacts']['execution_result'] = str(execution_path)
                 summary['execution_status'] = execution_result.status
                 summary['execution_reference'] = execution_result.reference

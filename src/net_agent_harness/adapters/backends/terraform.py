@@ -1,6 +1,6 @@
 import json
 import base64
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -26,6 +26,11 @@ class TerraformBackendAdapter(BackendAdapter):
         # Collect VLANs to add from plan_decision diff
         additions: dict[str, str] = {}  # name -> vlan_id string
         if change_request.plan_decision:
+            if change_request.plan_decision.decision.value != "apply":
+                return ConfigRender(
+                    meta=self._make_meta(change_request),
+                    summary=f"No changes required: decision is '{change_request.plan_decision.decision.value}'.",
+                )
             for device_change in change_request.plan_decision.diff:
                 for vlan in device_change.changes.vlans_to_create:
                     additions[vlan.name] = str(vlan.id)
@@ -85,8 +90,8 @@ class TerraformBackendAdapter(BackendAdapter):
             meta=ArtifactMeta(
                 run_id=run_id,
                 artifact_id=str(uuid4()),
-                version="1",
-                created_at=datetime.utcnow(),
+                version=1,
+                created_at=datetime.now(timezone.utc),
                 created_by="terraform-backend",
             ),
             backend="terraform",
@@ -151,7 +156,7 @@ class TerraformBackendAdapter(BackendAdapter):
         return ArtifactMeta(
             run_id=change_request.meta.run_id,
             artifact_id=str(uuid4()),
-            version="1",
-            created_at=datetime.utcnow(),
+            version=1,
+            created_at=datetime.now(timezone.utc),
             created_by="terraform-backend",
         )
