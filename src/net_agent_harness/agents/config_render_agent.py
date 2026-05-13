@@ -85,8 +85,8 @@ For each device in the payload:
    - commands: list of CLI commands (strings)
 
 Example for VLAN 13 on sw1:
-- device_name: "sw1"
-- rendered_text: '{"vlans": [{{"id": 13, "name": "users3"}}]}'
+- device_name: sw1
+- rendered_text: use json.dumps to create: {"vlans": [{"id": 13, "name": "users3"}]}
 - commands: ["vlan 13", "name users3"]
 
 ## API Payload Format
