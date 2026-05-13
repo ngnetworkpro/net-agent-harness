@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # Backend execution settings
     execution_backend: Literal["terraform", "direct_api", "ansible"] = "terraform"
     terraform_networks_file: Path | None = None  # path to networks.json
-    github_repo: str | None = None               # e.g. "droneup/terraform-network"
+    github_repo: str | None = None               # e.g. "my_org/terraform-network"
     github_token: SecretStr | None = None
     github_base_branch: str = "dev"
 
