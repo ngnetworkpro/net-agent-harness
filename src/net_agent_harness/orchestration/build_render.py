@@ -22,7 +22,7 @@ def build_vlan_render_input(change_request: ChangeRequest):
                         vlan_id=vlan_spec.id,
                         vlan_name=vlan_spec.name if vlan_spec.name else None,
                         operation=OperationType.ENSURE_PRESENT,
-                        target=change.device
+                        target=RenderTarget(name=change.device)
                     )
                 )
 
