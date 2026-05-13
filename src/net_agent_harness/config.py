@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -10,7 +11,7 @@ class Settings(BaseSettings):
         env_file_encoding='utf-8',
         extra='ignore',
     )
-    
+
     # config.py additions
     provider: str | None = None           # e.g. "nvidia", "ollama", "openai"
     openai_model: str = "gpt-4o-mini"     # used only if provider="openai"
@@ -24,6 +25,13 @@ class Settings(BaseSettings):
     netbox_token: SecretStr | None = None
     netbox_timeout_seconds: int = 10
     netbox_verify_tls: bool = True
+
+    # Backend execution settings
+    execution_backend: Literal["terraform", "direct_api", "ansible"] = "terraform"
+    terraform_networks_file: Path | None = None  # path to networks.json
+    github_repo: str | None = None               # e.g. "droneup/terraform-network"
+    github_token: SecretStr | None = None
+    github_base_branch: str = "dev"
 
 
 settings = Settings()
