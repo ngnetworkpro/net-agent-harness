@@ -139,7 +139,7 @@ def test_reject_terraform_primary_with_invalid_content(base_change_request, base
     assert not result.passed
     assert any("Terraform primary snippet" in e for e in result.errors)
 
-def test_reject_terraform_primary_when_cli_shaped_even_with_terraform_marker(base_change_request, base_config_render):
+def test_reject_terraform_primary_when_cli_shaped(base_change_request, base_config_render):
     settings.execution_backend = "terraform"
     base_config_render.snippets[0].backend_type = RenderBackendType.TERRAFORM
     base_config_render.snippets[0].rendered_text = (

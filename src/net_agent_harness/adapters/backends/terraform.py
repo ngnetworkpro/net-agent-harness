@@ -28,9 +28,9 @@ class TerraformBackendAdapter(BackendAdapter):
                     summary=f"No changes required: decision is '{change_request.plan_decision.decision.value}'.",
                 )
             for device_change in change_request.plan_decision.diff:
-                additions = additions_by_device.setdefault(device_change.device, {})
+                device_additions = additions_by_device.setdefault(device_change.device, {})
                 for vlan in device_change.changes.vlans_to_create:
-                    additions[vlan.name] = str(vlan.id)
+                    device_additions[vlan.name] = str(vlan.id)
 
         if not any(additions_by_device.values()):
             return ConfigRender(
