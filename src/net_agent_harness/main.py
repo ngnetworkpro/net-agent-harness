@@ -231,6 +231,27 @@ async def _async_render(change_request: ChangeRequest) -> None:
         message="Running Config Render Agent..."
     )
 
+    from .orchestration.resolve_backend import resolve_render_backend, generate_cli_fallback_snippet
+    from .models.enums import RenderBackendType, RenderRole
+
+    # Determine primary backend from settings + platform
+    platform = None
+    if change_request.resolved_targets:
+        platform = change_request.resolved_targets[0].platform
+    primary_backend = resolve_render_backend(settings, platform)
+
+    # Label snippets and generate fallbacks
+    final_snippets = []
+    for snippet in render_output.snippets:
+        snippet.backend_type = primary_backend
+        snippet.render_role = RenderRole.PRIMARY
+        final_snippets.append(snippet)
+        
+        # If the primary backend is not CLI, generate a CLI fallback deterministically
+        if primary_backend != RenderBackendType.CLI:
+            fallback = generate_cli_fallback_snippet(snippet)
+            final_snippets.append(fallback)
+
     # Wrap LLM output into a durable ConfigRender artifact with proper metadata
     run_id = change_request.meta.run_id
     render_result = ConfigRender(
@@ -242,7 +263,7 @@ async def _async_render(change_request: ChangeRequest) -> None:
             created_by=change_request.meta.created_by,
         ),
         summary=render_output.summary,
-        snippets=render_output.snippets,
+        snippets=final_snippets,
         warnings=render_output.warnings,
     )
 

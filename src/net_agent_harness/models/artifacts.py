@@ -2,12 +2,14 @@ from pydantic import BaseModel, Field
 from typing import Literal, Optional
 from enum import Enum
 from .common import ArtifactMeta
-from .enums import ValidationStatus, SwitchportMode, AllowedVlansMode, NetworkDomain
+from .enums import ValidationStatus, SwitchportMode, AllowedVlansMode, NetworkDomain, RenderBackendType, RenderRole
 from .changes import VlanSpec, PortSpec
 
 
 class ConfigSnippet(BaseModel):
     device_name: str
+    backend_type: RenderBackendType | None = None
+    render_role: RenderRole | None = None
     path_hint: str | None = None
     commands: list[str] = Field(default_factory=list)
     rendered_text: str | None = None
@@ -103,3 +105,9 @@ class ExecutionResult(BaseModel):
     status: str
     detail: str
     reference: str | None = None
+
+class RenderAcceptanceResult(BaseModel):
+    """Result of deterministic render acceptance validation."""
+    passed: bool
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)

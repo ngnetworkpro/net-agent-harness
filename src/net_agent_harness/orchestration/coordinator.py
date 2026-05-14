@@ -21,13 +21,34 @@ class StageCoordinator:
             self.run_store.update_stage(change_request.meta.run_id, 'render', 'running')
 
         render_input = build_render_input(change_request)
-        render_result = asyncio.run(
+        render_result_data = asyncio.run(
             change_render_agent.run(
-                prompt="",
+                "Render the configuration.",
                 deps=render_input,
             )
         )
+        render_result = render_result_data.output
 
+        from .resolve_backend import resolve_render_backend, generate_cli_fallback_snippet
+        from ..models.enums import RenderRole, RenderBackendType
+        
+        platform = None
+        if change_request.resolved_targets:
+            platform = change_request.resolved_targets[0].platform
+        primary_backend = resolve_render_backend(settings, platform)
+
+        final_snippets = []
+        for snippet in render_result.snippets:
+            snippet.backend_type = primary_backend
+            snippet.render_role = RenderRole.PRIMARY
+            final_snippets.append(snippet)
+            
+            if primary_backend != RenderBackendType.CLI:
+                fallback = generate_cli_fallback_snippet(snippet)
+                final_snippets.append(fallback)
+        
+        render_result.snippets = final_snippets
+        
         render_result.meta.run_id = change_request.meta.run_id
         ConfigRender.model_validate(render_result.model_dump())
         path = self.artifact_store.save_model(change_request.meta.run_id, 'config_render', render_result)

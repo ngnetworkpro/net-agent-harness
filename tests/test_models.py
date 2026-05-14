@@ -1,11 +1,12 @@
 from net_agent_harness.models.changes import ChangeRequest, RequestedChange, RollbackPlan
 from net_agent_harness.models.common import ArtifactMeta, ScopeRef
-from net_agent_harness.models.enums import ChangeRisk
+from net_agent_harness.models.enums import ChangeRisk, NetworkDomain
 
 
 def test_change_request_model():
     model = ChangeRequest(
         meta=ArtifactMeta(run_id="run-1", artifact_id="change-1", created_by="test"),
+        domain=NetworkDomain.VLAN,
         scope=ScopeRef(site="HQ", device_names=["sw1"]),
         requested_change=RequestedChange(
             summary="Add VLAN 220",
