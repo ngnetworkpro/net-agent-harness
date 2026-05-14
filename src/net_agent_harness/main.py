@@ -7,17 +7,15 @@ import asyncio
 from rich import print
 from pydantic_ai.exceptions import ModelHTTPError
 from .agents.change_planner import change_planner
-from .agents.config_render_agent import change_render_agent
 from .orchestration.stream_utils import run_agent_with_spinner
 from .config import settings
-from .models.artifacts import ConfigRender, RenderRequest
-from .models.changes import ChangeRequest, PlannedChange, PlanDecision
+from .models.artifacts import ConfigRender
+from .models.changes import ChangeRequest
 from .models.common import ArtifactMeta
 from datetime import timezone, datetime
 from .models.enums import RunStage
 from .orchestration.coordinator import StageCoordinator
 from .orchestration.run_context import RunContextData
-from .orchestration.build_render import build_render_input
 from .services.artifact_store import ArtifactStore
 from .services.run_store import RunStore
 from .services.run_progress_reporter import RunProgressReporter
@@ -28,9 +26,6 @@ from .tools.validation_tools import validate_config_render
 from .orchestration.desired_state_normalizer import normalize_desired_state
 from .orchestration.intent_router import route_intent
 from .orchestration.domain_loader import load_domain_context, DomainLoadError
-
-from .orchestration.resolve_backend import resolve_render_backend, aggregate_and_label_snippets
-from .models.enums import RenderBackendType, RenderRole
 
 app = typer.Typer(help='Network agent harness prototype')
 run_app = typer.Typer(help='Run end-to-end stage pipelines')
@@ -80,6 +75,9 @@ def ensure_renderable(change_request: ChangeRequest) -> None:
 def plan(request: str, operator: str = 'local-user'):
     try:
         asyncio.run(_async_plan(request, operator))
+    except typer.BadParameter as e:
+        typer.secho(f"Error executing plan: {e}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
     except ModelHTTPError as e:
         typer.secho(f"API Connection Error: Failed to communicate with the model provider ({e.status_code}).\nDetails: {e.body}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
@@ -174,6 +172,7 @@ async def _async_plan(request: str, operator: str = "local-user"):
             site=planned.scope.site,
             device_names=[t.name for t in resolved_targets],
             desired_state=normalized_desired_state,
+            inventory_source=settings.inventory_source,
         )
     # 4. ENFORCE
     reporter.update(run_stage.value, "running", "🔧 Enforcing plan decision...")
@@ -266,6 +265,9 @@ def render(change_request_file: Path):
     )
     try:
         asyncio.run(_async_render(change_request))
+    except typer.BadParameter as e:
+        typer.secho(f"Error executing render: {e}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
     except ModelHTTPError as e:
         typer.secho(f"API Connection Error: Failed to communicate with the model provider ({e.status_code}).\nDetails: {e.body}", fg=typer.colors.RED)
         raise typer.Exit(code=1)

@@ -1,4 +1,5 @@
 from ..config import Settings
+from ..models.artifacts import ConfigSnippet
 from ..models.enums import RenderBackendType
 
 # Platforms known to support direct API rendering
@@ -27,8 +28,6 @@ def resolve_render_backend(
         return RenderBackendType.API
 
     return RenderBackendType.CLI
-
-from ..models.artifacts import ConfigSnippet
 
 def generate_cli_fallback_snippet(primary_snippet: ConfigSnippet) -> ConfigSnippet:
     """Generate a CLI fallback snippet from a primary API/Terraform snippet."""

@@ -1,6 +1,8 @@
-import pytest
 from net_agent_harness.config import Settings
+from net_agent_harness.models.artifacts import ConfigSnippet
 from net_agent_harness.models.enums import RenderBackendType
+from net_agent_harness.models.enums import RenderRole
+from net_agent_harness.orchestration.resolve_backend import aggregate_and_label_snippets
 from net_agent_harness.orchestration.resolve_backend import resolve_render_backend
 
 def test_terraform_selected():
@@ -26,10 +28,6 @@ def test_cli_fallback():
     settings = Settings(execution_backend="direct_api")
     assert resolve_render_backend(settings) == RenderBackendType.CLI
     assert resolve_render_backend(settings, platform="cisco_ios") == RenderBackendType.CLI
-
-from net_agent_harness.orchestration.resolve_backend import aggregate_and_label_snippets
-from net_agent_harness.models.artifacts import ConfigSnippet
-from net_agent_harness.models.enums import RenderRole
 
 def test_aggregate_and_label_snippets_collapses_duplicates():
     raw_snippets = [

@@ -1,16 +1,43 @@
 from pydantic import BaseModel, Field
 from .common import ArtifactMeta, ScopeRef
-from .enums import ChangeRisk, TargetScope, PlanDecisionType, NetworkDomain
-from typing import Any
+from .enums import ChangeRisk, TargetScope, PlanDecisionType, NetworkDomain, SwitchportMode
+from typing import Any, Union, Literal
 
 
-class DesiredStateOperation(BaseModel):
-    object_type: str = Field(description="Object type: vlan, interface, svi, etc.")
-    operation: str = Field(description="Operation: ensure_present, ensure_absent, set_access_vlan, etc.")
-    attributes: dict[str, Any] = Field(default_factory=dict, description="Operation-specific attributes")
+class VlanAttributes(BaseModel):
+    model_config = {"extra": "forbid"}
+    vlan_id: int | None = None
+    name: str | None = None
+
+class InterfaceAttributes(BaseModel):
+    model_config = {"extra": "forbid"}
+    name: str | None = None
+    access_vlan: int | None = None
+    native_vlan: int | None = None
+    allowed_vlans: list[int] = Field(default_factory=list)
+
+class VlanDesiredStateOperation(BaseModel):
+    model_config = {"extra": "forbid"}
+    object_type: Literal["vlan"]
+    operation: Literal["ensure_present", "ensure_absent"]
+    attributes: VlanAttributes = Field(default_factory=VlanAttributes)
+
+class InterfaceDesiredStateOperation(BaseModel):
+    model_config = {"extra": "forbid"}
+    object_type: Literal["interface"]
+    operation: Literal["set_access_vlan", "set_trunk"]
+    attributes: InterfaceAttributes = Field(default_factory=InterfaceAttributes)
+
+DesiredStateOperation = Union[VlanDesiredStateOperation, InterfaceDesiredStateOperation]
+
+
+class VlanDesiredState(BaseModel):
+    model_config = {"extra": "forbid"}
+    operations: list[DesiredStateOperation] = Field(default_factory=list)
 
 
 class ResolvedTarget(BaseModel):
+    model_config = {"extra": "forbid"}
     name: str = Field(description="Concrete device name resolved from inventory")
     site: str | None = Field(default=None, description="Resolved site for the device")
     role: str | None = Field(default=None, description="Resolved device role")
@@ -19,6 +46,7 @@ class ResolvedTarget(BaseModel):
 
 
 class RequestedChange(BaseModel):
+    model_config = {"extra": "forbid"}
     summary: str = Field(
         description="Short human-readable summary of the requested change, one sentence, not a slug"
     )
@@ -41,13 +69,14 @@ class RequestedChange(BaseModel):
         default_factory=list,
         description="Explicit constraints stated in the request. Return an empty list if none are provided."
     )
-    desired_state: dict[str, Any] = Field(
+    desired_state: dict[str, Any] | VlanDesiredState = Field(
         default_factory=dict,
-        description="The desired state of the network after the change. This is a dictionary of key-value pairs representing the desired configuration."
+        description="The desired state of the network after the change. This is a structured dictionary representing the desired configuration."
     )
 
 
 class RollbackPlan(BaseModel):
+    model_config = {"extra": "forbid"}
     summary: str = Field(
         description="Short summary of how to reverse the requested change"
     )
@@ -62,17 +91,20 @@ class RollbackPlan(BaseModel):
 
 
 class VlanSpec(BaseModel):
-    id: int = Field(description="VLAN ID")
+    model_config = {"extra": "forbid"}
+    id: int = Field(description="VLAN ID", ge=1, le=4094)
     name: str = Field(default="", description="VLAN name, empty if not specified")
 
 
 class PortSpec(BaseModel):
+    model_config = {"extra": "forbid"}
     interface: str = Field(description="Interface name, e.g., 'ge-0/0/1'")
-    vlan_id: int = Field(description="VLAN ID to assign")
-    mode: str = Field(description="'access' or 'trunk'")
+    vlan_id: int = Field(description="VLAN ID to assign", ge=1, le=4094)
+    mode: SwitchportMode = Field(description="'access' or 'trunk'")
 
 
 class VlanChange(BaseModel):
+    model_config = {"extra": "forbid"}
     vlans_to_create: list[VlanSpec] = Field(
         default_factory=list,
         description="VLANs that must be created on the target device",
@@ -84,12 +116,14 @@ class VlanChange(BaseModel):
 
 
 class DeviceChange(BaseModel):
+    model_config = {"extra": "forbid"}
     device: str = Field(description="Hostname of the target device")
     domain: NetworkDomain = Field(description="Network domain: vlan, acl, routing, etc.")
     changes: VlanChange = Field(description="Typed change payload for the domain")
 
 
 class VlanDiff(BaseModel):
+    model_config = {"extra": "forbid"}
     vlans_to_create: list[int] = Field(
         default_factory=list,
         description="VLAN IDs that must be created on the target device",
@@ -101,6 +135,7 @@ class VlanDiff(BaseModel):
 
 
 class PlanDecision(BaseModel):
+    model_config = {"extra": "forbid"}
     decision: PlanDecisionType = Field(
         description="apply — changes required; no_op — already satisfied; blocked — cannot proceed"
     )
@@ -113,6 +148,7 @@ class PlanDecision(BaseModel):
 
 
 class PlannedChange(BaseModel):
+    model_config = {"extra": "forbid"}
     """
     Raw output from the change planner agent.
     resolved_targets here is informational — the orchestration layer
@@ -148,6 +184,7 @@ class PlannedChange(BaseModel):
 
 
 class ChangeRequest(BaseModel):
+    model_config = {"extra": "forbid"}
     """
     Durable change artifact written after planning is complete.
     resolved_targets is always set by orchestration, never trusted

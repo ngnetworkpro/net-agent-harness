@@ -11,11 +11,25 @@ class NetBoxAdapter:
         self.verify_tls = verify_tls
 
     def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        from pydantic import BaseModel, ValidationError
+
+        class NetBoxResponse(BaseModel):
+            count: int | None = None
+            next: str | None = None
+            previous: str | None = None
+            results: list[dict[str, Any]]
+
         headers = {'Authorization': f'Token {self.token}'}
         with httpx.Client(timeout=self.timeout_seconds, verify=self.verify_tls, headers=headers) as client:
             response = client.get(f'{self.base_url}{path}', params=params or {})
             response.raise_for_status()
-            return response.json()
+
+            try:
+                data = response.json()
+                validated = NetBoxResponse.model_validate(data)
+                return validated.model_dump(exclude_unset=True)
+            except (ValueError, ValidationError) as e:
+                raise RuntimeError(f"Failed to parse NetBox response from {path}: {e}")
 
     def get_devices(self, site: str | None = None, name: str | None = None, limit: int = 20) -> dict[str, Any]:
         params: dict[str, Any] = {'limit': limit}

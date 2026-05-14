@@ -53,11 +53,6 @@ def compute_vlan_diff(intent: dict, current_state: DeviceInfo) -> list[DeviceCha
     vlan_id: int = intent["vlan_id"]
     vlan_name: str = intent.get("vlan_name", "")
     interfaces: list[dict] = intent.get("interfaces", [])
-    vlan_label: str = (
-        f"VLAN {vlan_id} ({vlan_name})"
-        if vlan_name
-        else f"VLAN {vlan_id}"
-    )
 
     vlans_to_create: list[VlanSpec] = []
     ports_to_update: list[PortSpec] = []

@@ -1,5 +1,5 @@
 import pytest
-from net_agent_harness.models.artifacts import ConfigRender, ConfigSnippet, RenderAcceptanceResult
+from net_agent_harness.models.artifacts import ConfigRender, ConfigSnippet
 from net_agent_harness.models.changes import ChangeRequest, PlanDecision, ResolvedTarget, RequestedChange, RollbackPlan
 from net_agent_harness.models.common import ArtifactMeta, ScopeRef
 from net_agent_harness.models.enums import PlanDecisionType, TargetScope, NetworkDomain, ChangeRisk, RenderBackendType, RenderRole

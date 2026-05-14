@@ -1,6 +1,5 @@
 import pytest
 from net_agent_harness.orchestration.domain_loader import load_domain_context, DomainLoadError
-
 from net_agent_harness.models.enums import NetworkDomain
 
 def test_load_vlan_domain_context():

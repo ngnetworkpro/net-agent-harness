@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Literal, Optional
 from enum import Enum
 from .common import ArtifactMeta
@@ -7,10 +7,13 @@ from .changes import VlanSpec, PortSpec
 
 
 class ConfigSnippet(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     device_name: str
     backend_type: RenderBackendType | None = None
     render_role: RenderRole | None = None
     path_hint: str | None = None
+    cli_commands: list[str] = Field(default_factory=list)
+    api_payload: dict | None = None
     commands: list[str] = Field(default_factory=list)
     rendered_text: str | None = None
 
@@ -27,6 +30,7 @@ class ConfigRenderOutput(BaseModel):
 
 
 class ConfigRender(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     meta: ArtifactMeta
     summary: str
     snippets: list[ConfigSnippet] = Field(default_factory=list)
@@ -34,6 +38,7 @@ class ConfigRender(BaseModel):
 
 
 class VlanRenderInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     intent_type: Literal["set_access_vlan", "provision_vlan_trunk"]
     vlans_to_create: list[VlanSpec]
     ports_to_update: list[PortSpec]
@@ -43,6 +48,7 @@ class VlanRenderInput(BaseModel):
 
 
 class RenderTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     name: str
     site: str | None = None
     role: str | None = None
@@ -55,12 +61,14 @@ class OperationType(str, Enum):
     REMOVE = "remove"
 
 class VlanRenderOp(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     target: RenderTarget
     vlan_id: int
     operation: OperationType
     vlan_name: str | None = None
 
 class VlanInterfaceRenderOp(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     target: RenderTarget
     interface_name: str
     switchport_mode: SwitchportMode | None = None
@@ -70,20 +78,24 @@ class VlanInterfaceRenderOp(BaseModel):
     allowed_vlans_mode: AllowedVlansMode | None = None
 
 class VlanRenderPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     vlan_ops: list[VlanRenderOp] = Field(default_factory=list)
     interface_ops: list[VlanInterfaceRenderOp] = Field(default_factory=list)
 
 class RoutingRenderPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     prefixes: list[str] = Field(default_factory=list)
     next_hop: str | None = None
 
 class RenderRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     domain: NetworkDomain
     intent_type: str
     payload: VlanRenderPayload | RoutingRenderPayload
 
 
 class Finding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     code: str
     severity: str
     message: str
@@ -92,6 +104,7 @@ class Finding(BaseModel):
 
 
 class ValidationReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     meta: ArtifactMeta
     overall_status: ValidationStatus
     checks_run: list[str] = Field(default_factory=list)

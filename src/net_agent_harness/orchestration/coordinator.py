@@ -1,5 +1,4 @@
 from pathlib import Path
-import asyncio
 from ..models.artifacts import ConfigRender, ValidationReport, ExecutionResult
 from ..models.changes import ChangeRequest
 from ..services.artifact_store import ArtifactStore
@@ -28,7 +27,6 @@ class StageCoordinator:
         render_result = render_result_data.output
 
         from .resolve_backend import resolve_render_backend, aggregate_and_label_snippets
-        from ..models.enums import RenderRole, RenderBackendType
         
         platform = None
         if change_request.resolved_targets:
@@ -47,7 +45,7 @@ class StageCoordinator:
 
         if self.run_store:
             self.run_store.update_stage(change_request.meta.run_id, 'render', 'completed', artifact='config_render')
-        return render_result, path
+        return config_render, path
 
     def validate(
         self,

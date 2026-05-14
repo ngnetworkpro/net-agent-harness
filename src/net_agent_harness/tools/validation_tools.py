@@ -1,4 +1,3 @@
-from typing import Any
 from ..models.artifacts import ConfigRender, ConfigSnippet, Finding, ValidationReport, RenderAcceptanceResult
 from ..models.changes import ChangeRequest
 from ..models.common import ArtifactMeta

@@ -29,6 +29,45 @@ def test_normalize_device():
     assert out['primary_ip'] == '10.0.0.10/24'
 
 
+def test_netbox_adapter_get():
+    from unittest.mock import patch
+
+    adapter = NetBoxAdapter(
+        base_url='https://netbox.example.com',
+        token='secret-token',
+        timeout_seconds=5,
+        verify_tls=True,
+    )
+
+    with patch("httpx.Client.get") as mock_get:
+        class MockResponse:
+            def raise_for_status(self): pass
+            def json(self): return {"count": 1, "results": [{"id": 1, "name": "sw1"}]}
+
+        mock_get.return_value = MockResponse()
+
+        res = adapter._get("/api/dcim/devices/")
+        assert "results" in res
+        assert res["results"][0]["name"] == "sw1"
+
+
+def test_lookup_inventory_sync_netbox():
+    from unittest.mock import patch
+    from net_agent_harness.tools.inventory_tools import lookup_inventory_sync
+
+    with patch("net_agent_harness.adapters.netbox_adapter.build_netbox_adapter_from_settings") as mock_builder:
+        class MockAdapter:
+            def get_devices(self, site=None, name=None):
+                return {"count": 1, "results": [{"id": 1, "name": "sw1", "site": {"name": "HQ"}}]}
+
+        mock_builder.return_value = MockAdapter()
+
+        res = lookup_inventory_sync("netbox", site="HQ")
+        assert res["source"] == "netbox"
+        assert res["count"] == 1
+        assert res["results"][0]["name"] == "sw1"
+
+
 def test_normalize_interface_and_ip():
     iface = {
         'id': 20,

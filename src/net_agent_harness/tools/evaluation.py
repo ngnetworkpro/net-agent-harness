@@ -32,11 +32,25 @@ def _load_device_from_inventory(
     run_id: str,
     site: str,
     device_name: str,
+    inventory_source: str,
 ):
-    from ..adapters.mock_inventory_adapter import get_inventory_for_site
+    from .inventory_tools import lookup_inventory_sync
+    from ..models.inventory import DeviceInfo
 
-    snapshot = get_inventory_for_site(run_id=run_id, site=site)
-    return next((d for d in snapshot.devices if d.name == device_name), None)
+    inventory_data = lookup_inventory_sync(
+        inventory_source=inventory_source,
+        site=site,
+        device_name=device_name
+    )
+
+    results = inventory_data.get("results", [])
+    if not results:
+        return None
+
+    device_dict = next((d for d in results if d.get("name") == device_name), None)
+    if not device_dict:
+        return None
+    return DeviceInfo(**device_dict)
 
 
 def _merge_device_changes(all_changes: list[DeviceChange]) -> list[DeviceChange]:
@@ -68,8 +82,9 @@ def _evaluate_vlan_operations(
     site: str,
     device_name: str,
     desired_state: dict,
+    inventory_source: str,
 ) -> PlanDecision:
-    device = _load_device_from_inventory(run_id, site=site, device_name=device_name)
+    device = _load_device_from_inventory(run_id, site=site, device_name=device_name, inventory_source=inventory_source)
     if device is None:
         return _blocked(
             f"Device '{device_name}' was not found in the inventory snapshot for site '{site}. "
@@ -128,8 +143,7 @@ def _evaluate_vlan_operations(
         attrs = iface_op.get("attributes", {})
         iface_name = attrs.get("name")
         access_vlan = attrs.get("access_vlan")
-        native_vlan = attrs.get("native_vlan")
-        allowed_vlans = attrs.get("allowed_vlans", [])
+        # Removed unused attribute lookups
 
         if iface_name is None:
             return _blocked("interface name is required for interface operations.")
@@ -200,6 +214,7 @@ def evaluate_intent_state(
     site: str,
     device_names: list[str],
     desired_state: dict | None = None,
+    inventory_source: str = "mock",
 ) -> PlanDecision:
     """Evaluate whether a normalized intent is already satisfied, requires changes,
     or should be blocked based on current inventory state.
@@ -230,4 +245,5 @@ def evaluate_intent_state(
         site=site,
         device_name=device_names[0],
         desired_state=desired_state,
+        inventory_source=inventory_source,
     )

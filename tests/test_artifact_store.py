@@ -5,6 +5,13 @@ from net_agent_harness.models.enums import ChangeRisk, NetworkDomain
 from net_agent_harness.services.artifact_store import ArtifactStore
 
 
+def test_artifact_store_path_traversal(tmp_path: Path):
+    import pytest
+    store = ArtifactStore(tmp_path)
+
+    with pytest.raises(ValueError, match="Invalid run_id"):
+        store.run_dir("../../../etc/passwd")
+
 def test_save_model(tmp_path: Path):
     store = ArtifactStore(tmp_path)
     model = ChangeRequest(

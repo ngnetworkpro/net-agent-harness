@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, model_validator
-from typing import Optional, List
+from typing import Optional
 from .common import ArtifactMeta
 from .enums import DeviceVendor, SwitchportMode, AllowedVlansMode, InterfaceType, SpanningTreeMode
 

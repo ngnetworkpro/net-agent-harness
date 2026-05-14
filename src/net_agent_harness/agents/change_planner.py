@@ -1,11 +1,9 @@
-import os
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import RunContext
 from pydantic_ai.output import NativeOutput
 
 from ..models.changes import PlannedChange
 from ..orchestration.run_context import RunContextData
 from ..tools.inventory_tools import lookup_inventory, resolve_device_target, resolve_site_targets
-from ..tools.evaluation import evaluate_intent_state
 
 from ..agents.agent_factory import build_agent
 

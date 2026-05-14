@@ -1,6 +1,5 @@
-from pydantic_ai import Agent, RunContext
-from ..config import settings
 from ..models.artifacts import ConfigRenderOutput, RenderRequest
+from pydantic_ai import RunContext
 from pydantic_ai.output import NativeOutput
 
 from ..agents.agent_factory import build_agent

@@ -1,7 +1,13 @@
 from ..models.enums import NetworkDomain
 
 
-def normalize_desired_state(domain: NetworkDomain, desired_state: dict) -> dict:
+from pydantic import BaseModel
+from ..models.changes import VlanDesiredState
+
+def normalize_desired_state(domain: NetworkDomain, desired_state: dict | VlanDesiredState | BaseModel) -> dict:
+    if hasattr(desired_state, "model_dump"):
+        desired_state = desired_state.model_dump(exclude_unset=True)
+
     normalizer = _NORMALIZERS.get(domain)
     if normalizer:
         return normalizer(desired_state)
@@ -9,7 +15,8 @@ def normalize_desired_state(domain: NetworkDomain, desired_state: dict) -> dict:
 
 
 def _normalize_vlan_desired_state(state: dict) -> dict:
-    if "operations" in state:
+    if "operations" in state and isinstance(state["operations"], list):
+        # We assume it's already using the structured format
         return state
 
     operations = []
