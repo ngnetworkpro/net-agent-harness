@@ -36,12 +36,14 @@ class StageCoordinator:
         primary_backend = resolve_render_backend(settings, platform)
 
         final_snippets = aggregate_and_label_snippets(render_result.snippets, primary_backend)
-        
+
         render_result.snippets = final_snippets
-        
-        render_result.meta.run_id = change_request.meta.run_id
-        ConfigRender.model_validate(render_result.model_dump())
-        path = self.artifact_store.save_model(change_request.meta.run_id, 'config_render', render_result)
+
+        config_render = ConfigRender(
+            meta=change_request.meta,
+            **render_result.model_dump()
+        )
+        path = self.artifact_store.save_model(change_request.meta.run_id, 'config_render', config_render)
 
         if self.run_store:
             self.run_store.update_stage(change_request.meta.run_id, 'render', 'completed', artifact='config_render')
