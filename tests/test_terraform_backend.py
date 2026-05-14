@@ -72,11 +72,31 @@ async def test_render_uses_local_source_by_default(tmp_path, monkeypatch):
 
     render = await TerraformBackendAdapter().render(_build_change_request())
 
-    assert len(render.snippets) == 2
-    assert {s.device_name for s in render.snippets} == {"sw1", "sw2"}
-    assert all(s.render_role == RenderRole.PRIMARY for s in render.snippets)
-    assert all((s.path_hint or "").startswith("local:") for s in render.snippets)
-    assert all("locals {" in (s.rendered_text or "") for s in render.snippets)
+    # 2 devices × (1 primary + 1 fallback) = 4 snippets
+    assert len(render.snippets) == 4
+    primary = [s for s in render.snippets if s.render_role == RenderRole.PRIMARY]
+    fallback = [s for s in render.snippets if s.render_role == RenderRole.FALLBACK]
+    assert len(primary) == 2
+    assert len(fallback) == 2
+    assert {s.device_name for s in primary} == {"sw1", "sw2"}
+    assert {s.device_name for s in fallback} == {"sw1", "sw2"}
+
+    # Primary snippets must contain real Terraform HCL
+    for s in primary:
+        assert (s.path_hint or "").startswith("local:")
+        assert "locals {" in (s.rendered_text or "")
+        assert "resource " in (s.rendered_text or "")
+
+    # CLI fallback for sw1 must contain real VLAN + interface commands
+    sw1_fb = [s for s in fallback if s.device_name == "sw1"][0]
+    assert "vlan 220" in sw1_fb.rendered_text
+    assert "name Engineering" in sw1_fb.rendered_text
+    assert "set interfaces ge-0/0/1 unit 0 family ethernet-switching vlan members 220" in sw1_fb.rendered_text
+
+    # CLI fallback for sw2 (no ports, only VLAN)
+    sw2_fb = [s for s in fallback if s.device_name == "sw2"][0]
+    assert "vlan 221" in sw2_fb.rendered_text
+    assert "name Voice" in sw2_fb.rendered_text
 
 
 @pytest.mark.asyncio
@@ -115,7 +135,8 @@ async def test_render_uses_github_source(monkeypatch):
     monkeypatch.setattr("net_agent_harness.adapters.backends.terraform.httpx.AsyncClient", _FakeClient)
 
     render = await TerraformBackendAdapter().render(_build_change_request())
-    assert all((s.path_hint or "").startswith("github:ngnetworkpro/net-agent-harness:") for s in render.snippets)
+    primary = [s for s in render.snippets if s.render_role == RenderRole.PRIMARY]
+    assert all((s.path_hint or "").startswith("github:ngnetworkpro/net-agent-harness:") for s in primary)
 
 
 @pytest.mark.asyncio

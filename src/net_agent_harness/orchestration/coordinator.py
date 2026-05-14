@@ -1,6 +1,7 @@
 from pathlib import Path
 from ..models.artifacts import ConfigRender, ValidationReport, ExecutionResult
 from ..models.changes import ChangeRequest
+from ..models.enums import RenderBackendType
 from ..services.artifact_store import ArtifactStore
 from ..services.run_store import RunStore
 from ..tools.validation_tools import validate_config_render
@@ -19,28 +20,36 @@ class StageCoordinator:
         if self.run_store:
             self.run_store.update_stage(change_request.meta.run_id, 'render', 'running')
 
-        render_input = build_render_input(change_request)
-        render_result_data = await change_render_agent.run(
-            "Render the configuration.",
-            deps=render_input,
-        )
-        render_result = render_result_data.output
+        from .resolve_backend import resolve_render_backend
 
-        from .resolve_backend import resolve_render_backend, aggregate_and_label_snippets
-        
         platform = None
         if change_request.resolved_targets:
             platform = change_request.resolved_targets[0].platform
         primary_backend = resolve_render_backend(settings, platform)
 
-        final_snippets = aggregate_and_label_snippets(render_result.snippets, primary_backend)
+        # Source-backed backends have their own deterministic render — skip the LLM
+        if primary_backend == RenderBackendType.TERRAFORM:
+            from ..adapters.backends.terraform import TerraformBackendAdapter
+            adapter = TerraformBackendAdapter()
+            config_render = await adapter.render(change_request)
+        else:
+            # API / CLI — use the LLM render agent + post-processing
+            render_input = build_render_input(change_request)
+            render_result_data = await change_render_agent.run(
+                "Render the configuration.",
+                deps=render_input,
+            )
+            render_result = render_result_data.output
 
-        render_result.snippets = final_snippets
+            from .resolve_backend import aggregate_and_label_snippets
+            final_snippets = aggregate_and_label_snippets(render_result.snippets, primary_backend)
+            render_result.snippets = final_snippets
 
-        config_render = ConfigRender(
-            meta=change_request.meta,
-            **render_result.model_dump()
-        )
+            config_render = ConfigRender(
+                meta=change_request.meta,
+                **render_result.model_dump()
+            )
+
         path = self.artifact_store.save_model(change_request.meta.run_id, 'config_render', config_render)
 
         if self.run_store:
@@ -69,6 +78,7 @@ class StageCoordinator:
 
     async def execute(
         self,
+        config_render: ConfigRender,
         change_request: ChangeRequest,
         validation_report: ValidationReport,
     ) -> tuple[ExecutionResult, Path]:
@@ -79,10 +89,7 @@ class StageCoordinator:
         if not validation_report.approved_for_execution:
             raise RuntimeError("Execution blocked: validation did not approve this change.")
 
-        adapter = get_backend_adapter(settings)
-        backend_render = await adapter.render(change_request)
-
-        approved = request_approval(backend_render)
+        approved = request_approval(config_render)
         if not approved:
             if self.run_store:
                 self.run_store.update_stage(run_id, 'approval_pending', 'rejected')
@@ -91,7 +98,8 @@ class StageCoordinator:
         if self.run_store:
             self.run_store.update_stage(run_id, 'execute', 'running')
 
-        result = await adapter.apply(backend_render)
+        adapter = get_backend_adapter(settings)
+        result = await adapter.apply(config_render)
         path = self.artifact_store.save_model(run_id, 'execution_result', result)
 
         if self.run_store:
@@ -115,7 +123,9 @@ class StageCoordinator:
 
         if validation_result.approved_for_execution:
             try:
-                execution_result, execution_path = await self.execute(change_request, validation_result)
+                execution_result, execution_path = await self.execute(
+                    render_result, change_request, validation_result
+                )
                 summary['artifacts']['execution_result'] = str(execution_path)
                 summary['execution_status'] = execution_result.status
                 summary['execution_reference'] = execution_result.reference

@@ -40,6 +40,14 @@ class TerraformBackendAdapter(BackendAdapter):
             )
 
         snippets: list[ConfigSnippet] = []
+
+        # Build a lookup of port changes per device from the plan diff
+        ports_by_device: dict[str, list] = {}
+        if change_request.plan_decision:
+            for device_change in change_request.plan_decision.diff:
+                if device_change.changes.ports_to_update:
+                    ports_by_device[device_change.device] = device_change.changes.ports_to_update
+
         for device_name, additions in additions_by_device.items():
             if not additions:
                 continue
@@ -68,9 +76,17 @@ class TerraformBackendAdapter(BackendAdapter):
                 )
             )
 
+            # Generate a CLI fallback with real commands from the plan diff
+            cli_fallback = self._build_cli_fallback_snippet(
+                device_name=device_name,
+                vlan_additions=additions,
+                port_changes=ports_by_device.get(device_name, []),
+            )
+            snippets.append(cli_fallback)
+
         return ConfigRender(
             meta=self._make_meta(change_request),
-            summary=f"Terraform: source-backed render from {source_label} for {len(snippets)} device(s)",
+            summary=f"Terraform: source-backed render from {source_label} for {len(additions_by_device)} device(s)",
             snippets=snippets,
         )
 
@@ -288,6 +304,49 @@ class TerraformBackendAdapter(BackendAdapter):
             if (parent / "pyproject.toml").exists():
                 return parent
         raise RuntimeError("Unable to resolve repository root from terraform backend path")
+
+    def _build_cli_fallback_snippet(
+        self,
+        *,
+        device_name: str,
+        vlan_additions: dict[str, str],
+        port_changes: list,
+    ) -> ConfigSnippet:
+        """Generate a CLI fallback snippet with real commands from the plan diff."""
+        cli_commands: list[str] = []
+
+        # VLAN creation commands
+        for vlan_name, vlan_id in vlan_additions.items():
+            cli_commands.append(f"vlan {vlan_id}")
+            cli_commands.append(f"name {vlan_name}")
+
+        # Interface assignment commands
+        for port in port_changes:
+            iface = port.interface
+            mode = port.mode if hasattr(port.mode, 'value') else port.mode
+            if mode == "access":
+                cli_commands.append(
+                    f"set interfaces {iface} unit 0 family ethernet-switching vlan members {port.vlan_id}"
+                )
+                cli_commands.append(
+                    f"set interfaces {iface} unit 0 family ethernet-switching port-mode access"
+                )
+            elif mode == "trunk":
+                cli_commands.append(
+                    f"set interfaces {iface} unit 0 family ethernet-switching port-mode trunk"
+                )
+                cli_commands.append(
+                    f"set interfaces {iface} unit 0 family ethernet-switching vlan members all"
+                )
+
+        rendered_lines = [f"! CLI fallback for {device_name}"] + cli_commands
+        return ConfigSnippet(
+            device_name=device_name,
+            backend_type=RenderBackendType.CLI,
+            render_role=RenderRole.FALLBACK,
+            commands=cli_commands,
+            rendered_text="\n".join(rendered_lines),
+        )
 
     def _make_meta(self, change_request: ChangeRequest) -> ArtifactMeta:
         return ArtifactMeta(
