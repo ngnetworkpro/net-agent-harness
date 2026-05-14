@@ -29,6 +29,9 @@ from .orchestration.desired_state_normalizer import normalize_desired_state
 from .orchestration.intent_router import route_intent
 from .orchestration.domain_loader import load_domain_context, DomainLoadError
 
+from .orchestration.resolve_backend import resolve_render_backend, aggregate_and_label_snippets
+from .models.enums import RenderBackendType, RenderRole
+
 app = typer.Typer(help='Network agent harness prototype')
 run_app = typer.Typer(help='Run end-to-end stage pipelines')
 app.add_typer(run_app, name='run')
@@ -225,46 +228,11 @@ async def _async_render(change_request: ChangeRequest) -> None:
     if plan_decision is None:
         raise ValueError("plan_decision is required for rendering")
 
-    render_input = build_render_input(change_request)
+    coordinator = StageCoordinator(artifact_store, run_store)
+    render_result, artifact_path = await coordinator.render(change_request)
 
-    render_output = await run_agent_with_spinner(
-        agent=change_render_agent,
-        prompt="Render from change request and render input",
-        deps=render_input,
-        model_settings={"temperature": 0.0},
-        message="Running Config Render Agent..."
-    )
-
-    from .orchestration.resolve_backend import resolve_render_backend, aggregate_and_label_snippets
-    from .models.enums import RenderBackendType, RenderRole
-
-    # Determine primary backend from settings + platform
-    platform = None
-    if change_request.resolved_targets:
-        platform = change_request.resolved_targets[0].platform
-    primary_backend = resolve_render_backend(settings, platform)
-
-    # Label snippets and generate fallbacks
-    final_snippets = aggregate_and_label_snippets(render_output.snippets, primary_backend)
-
-    # Wrap LLM output into a durable ConfigRender artifact with proper metadata
-    run_id = change_request.meta.run_id
-    render_result = ConfigRender(
-        meta=ArtifactMeta(
-            run_id=run_id,
-            artifact_id=f"config-render-{run_id}",
-            version=1,
-            created_at=datetime.now(timezone.utc),
-            created_by=change_request.meta.created_by,
-        ),
-        summary=render_output.summary,
-        snippets=final_snippets,
-        warnings=render_output.warnings,
-    )
-
-    artifact_path = artifact_store.save_model(run_id, 'config_render', render_result)
     reporter.update("render", "completed", f"✅ render complete: {artifact_path}", artifact='config_render')
-    print({'run_id': run_id, 'artifact_path': str(artifact_path), 'output': render_result.model_dump(mode='json')})
+    print({'run_id': change_request.meta.run_id, 'artifact_path': str(artifact_path), 'output': render_result.model_dump(mode='json')})
 
 
 def _run_validate(

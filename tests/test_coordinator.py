@@ -9,8 +9,11 @@ from unittest.mock import patch, AsyncMock
 from net_agent_harness.models.artifacts import ConfigRender, ConfigSnippet
 from net_agent_harness.models.enums import RenderBackendType, RenderRole
 
+import pytest
+
+@pytest.mark.asyncio
 @patch("net_agent_harness.orchestration.coordinator.change_render_agent.run", new_callable=AsyncMock)
-def test_stage_coordinator_pipeline(mock_run, tmp_path):
+async def test_stage_coordinator_pipeline(mock_run, tmp_path):
     mock_run.return_value.output = ConfigRender(
         summary="Test Render",
         snippets=[ConfigSnippet(device_name="sw1", rendered_text="{}", backend_type=RenderBackendType.API, render_role=RenderRole.PRIMARY)],
@@ -37,6 +40,6 @@ def test_stage_coordinator_pipeline(mock_run, tmp_path):
         plan_decision=PlanDecision(decision=PlanDecisionType.APPLY, reason="test", diff=[])
     )
 
-    summary = coordinator.run_pipeline(change_request)
+    summary = await coordinator.run_pipeline(change_request)
     assert summary["status"] in {"pass", "warn", "fail"}
     assert "run_summary" in summary["artifacts"]

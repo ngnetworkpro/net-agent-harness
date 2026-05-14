@@ -16,16 +16,14 @@ class StageCoordinator:
         self.artifact_store = artifact_store
         self.run_store = run_store
 
-    def render(self, change_request: ChangeRequest) -> tuple[ConfigRender, Path]:
+    async def render(self, change_request: ChangeRequest) -> tuple[ConfigRender, Path]:
         if self.run_store:
             self.run_store.update_stage(change_request.meta.run_id, 'render', 'running')
 
         render_input = build_render_input(change_request)
-        render_result_data = asyncio.run(
-            change_render_agent.run(
-                "Render the configuration.",
-                deps=render_input,
-            )
+        render_result_data = await change_render_agent.run(
+            "Render the configuration.",
+            deps=render_input,
         )
         render_result = render_result_data.output
 
@@ -69,7 +67,7 @@ class StageCoordinator:
             )
         return validation_result, path
 
-    def execute(
+    async def execute(
         self,
         change_request: ChangeRequest,
         validation_report: ValidationReport,
@@ -82,7 +80,7 @@ class StageCoordinator:
             raise RuntimeError("Execution blocked: validation did not approve this change.")
 
         adapter = get_backend_adapter(settings)
-        backend_render = adapter.render(change_request)
+        backend_render = await adapter.render(change_request)
 
         approved = request_approval(backend_render)
         if not approved:
@@ -93,7 +91,7 @@ class StageCoordinator:
         if self.run_store:
             self.run_store.update_stage(run_id, 'execute', 'running')
 
-        result = adapter.apply(backend_render)
+        result = await adapter.apply(backend_render)
         path = self.artifact_store.save_model(run_id, 'execution_result', result)
 
         if self.run_store:
@@ -101,8 +99,8 @@ class StageCoordinator:
 
         return result, path
 
-    def run_pipeline(self, change_request: ChangeRequest) -> dict:
-        render_result, render_path = self.render(change_request)
+    async def run_pipeline(self, change_request: ChangeRequest) -> dict:
+        render_result, render_path = await self.render(change_request)
         validation_result, validation_path = self.validate(render_result, change_request)
         summary = {
             'run_id': change_request.meta.run_id,
@@ -117,7 +115,7 @@ class StageCoordinator:
 
         if validation_result.approved_for_execution:
             try:
-                execution_result, execution_path = self.execute(change_request, validation_result)
+                execution_result, execution_path = await self.execute(change_request, validation_result)
                 summary['artifacts']['execution_result'] = str(execution_path)
                 summary['execution_status'] = execution_result.status
                 summary['execution_reference'] = execution_result.reference
