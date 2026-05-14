@@ -26,6 +26,6 @@ def test_route_intent_wireless():
 
 def test_route_intent_generic():
     res1 = route_intent("fix the thing on sw1")
-    assert res1.domain == "generic"
+    assert res1.domain == "other"
     assert res1.ambiguous
     assert res1.confidence == 0.0

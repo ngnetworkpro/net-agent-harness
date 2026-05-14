@@ -1,6 +1,6 @@
 from ..models.changes import ChangeRequest
 from ..models.domain import NetworkDomain
-from ..models.artifacts import RenderRequest, VlanRenderPayload, VlanRenderOp, OperationType, RenderTarget
+from ..models.artifacts import RenderRequest, VlanRenderPayload, VlanRenderOp, VlanInterfaceRenderOp, OperationType, RenderTarget
 
 def build_render_input(change_request: ChangeRequest):
     if change_request.domain == NetworkDomain.VLAN:

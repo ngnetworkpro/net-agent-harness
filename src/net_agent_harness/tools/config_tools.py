@@ -12,25 +12,27 @@ async def render_vlan_config(change_request: ChangeRequest) -> ConfigRender:
     device_names = change_request.scope.device_names or ["unknown-device"]
     primary_device = device_names[0]
 
-    intent = change_request.requested_change.intent.lower()
-    desired_state = change_request.requested_change.desired_state
+    intent_type = "set_access_vlan"
+    mode = "access"
 
-    if "access" in intent and "trunk" not in intent:
-        intent_type: str = "set_access_vlan"
-        mode: str = "access"
-    elif "trunk" in intent or "provision_vlan_trunk" in intent:
-        intent_type = "provision_vlan_trunk"
-        mode = "trunk"
-    else:
-        intent_type = "set_access_vlan"
-        mode = "access"
+    device_diff = plan_decision.diff[0].changes if plan_decision.diff else None
+
+    if device_diff and device_diff.ports_to_update:
+        first_port = device_diff.ports_to_update[0]
+        if first_port.mode == "trunk":
+            intent_type = "provision_vlan_trunk"
+            mode = "trunk"
+
+    vlan_name = None
+    if device_diff and device_diff.vlans_to_create:
+        vlan_name = device_diff.vlans_to_create[0].name
 
     render_input = VlanRenderInput(
         intent_type=intent_type,
-        vlans_to_create=plan_decision.diff.vlans_to_create,
-        ports_to_update=plan_decision.diff.ports_to_update,
+        vlans_to_create=device_diff.vlans_to_create if device_diff else [],
+        ports_to_update=device_diff.ports_to_update if device_diff else [],
         target_device=primary_device,
-        vlan_name=desired_state.get("vlans", [{}])[0].get("name") if desired_state.get("vlans") else None,
+        vlan_name=vlan_name,
         mode=mode,
     )
 

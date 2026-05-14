@@ -288,8 +288,18 @@ def lookup_inventory_sync(
     if inventory_source == "mock":
         return _mock_inventory_snapshot(site=site, device_name=device_name)
 
+    if inventory_source == "netbox":
+        from ..adapters.netbox_adapter import build_netbox_adapter_from_settings
+        adapter = build_netbox_adapter_from_settings()
+        payload = adapter.get_devices(site=site, name=device_name)
+        devices = [_normalize_device(item) for item in payload.get("results", [])]
+        return {
+            "source": "netbox",
+            "count": payload.get("count", len(devices)),
+            "results": devices,
+        }
+
     # TODO: implement file-based inventory resolution
-    # TODO: implement netbox-based inventory resolution
 
     raise ValueError(f"Unsupported inventory_source: {inventory_source!r}")
 

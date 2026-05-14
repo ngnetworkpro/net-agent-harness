@@ -1,5 +1,3 @@
-from pydantic_ai import Agent
-from ..config import settings
 from ..models.artifacts import ConfigRender, RenderRequest
 from pydantic_ai.output import NativeOutput
 
@@ -31,14 +29,15 @@ def render_system_prompt() -> str:
         "4. Render safe, reviewable candidate config only. Do not claim anything was executed. "
         "\n\n## Output Format "
         "Produce a ConfigRender with two snippet types per device: "
-        "\n1. API payload (abstract structure for later translation): "
+        "\n1. API payload (abstract structure for later translation) in the `api_payload` field: "
         "   - vlans: [{\"id\": <int>, \"name\": <str>}] "
         "   - port_configs: [{\"port\": <str>, \"mode\": <str>, \"access_vlan\": <int> or \"allowed_vlans_mode\": \"all\"}] "
-        "\n2. CLI fallback commands (Juniper Mist style): "
+        "\n2. CLI fallback commands (Juniper Mist style) in the `cli_commands` field: "
         "   - VLAN creation: 'vlan <id>' + 'name VLAN_<id>' "
         "   - Access port: 'set interfaces <port> unit 0 family ethernet-switching vlan members <vlan_id>' "
         "   - Trunk port: 'set interfaces <port> unit 0 family ethernet-switching vlan members all' "
         "   (Use 'all' for allowed_vlans_mode, NOT numeric expansion like '1-4094') "
+        "   - You MUST include '! Candidate config' in the generated CLI commands list to pass validation. "
         "\n\n## allowed_vlans_mode Rule "
         "For trunk ports, always use allowed_vlans_mode='all' in API payloads. "
         "In CLI, use 'switchport trunk allowed vlans all' — never expand VLANs numerically. "

@@ -1,11 +1,6 @@
 from enum import Enum
 
 
-class ChangeRisk(str, Enum):
-    low = "low"
-    medium = "medium"
-    high = "high"
-
 class TargetScope(str, Enum):
     device = "device"
     site = "site"

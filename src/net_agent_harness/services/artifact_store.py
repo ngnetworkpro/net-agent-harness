@@ -9,7 +9,12 @@ class ArtifactStore:
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
     def run_dir(self, run_id: str) -> Path:
+        import re
+        if not re.match(r'^[\w-]+$', run_id):
+            raise ValueError(f"Invalid run_id: {run_id}")
         path = self.base_dir / run_id
+        if not path.resolve().is_relative_to(self.base_dir.resolve()):
+            raise ValueError(f"Path traversal detected for run_id: {run_id}")
         path.mkdir(parents=True, exist_ok=True)
         return path
 

@@ -26,7 +26,7 @@ ROUTING_PRIORITY = [
     "route-map",
 ]
 
-FALLBACK_DOMAIN = "generic"
+FALLBACK_DOMAIN = "other"
 
 def route_intent(request: str) -> RouteResult:
     lower = request.lower()
