@@ -16,8 +16,9 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"     # used only if provider="openai"
     ollama_model: str = 'qwen3.5:9b'
     nvidia_api_key: str | None = None
-    nvidia_model: str = 'minimaxai/minimax-m2.7'
+    nvidia_model: str = 'minimaxai/minimax-m2.7' # optional 'mistralai/mistral-nemotron'
     inventory_source: str = 'mock'
+    execution_backend: str = "direct_api"
     require_approval_for_execute: bool = True
     runs_dir: Path = Path('runs')
     netbox_url: str | None = None

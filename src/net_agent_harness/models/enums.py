@@ -72,3 +72,13 @@ class PlanDecisionType(str, Enum):
     APPLY = "apply"
     NO_OP = "no_op"
     BLOCKED = "blocked"
+
+class RenderBackendType(str, Enum):
+    API = "api"
+    TERRAFORM = "terraform"
+    ANSIBLE = "ansible"
+    CLI = "cli"
+
+class RenderRole(str, Enum):
+    PRIMARY = "primary"
+    FALLBACK = "fallback"

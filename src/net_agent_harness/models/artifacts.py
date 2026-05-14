@@ -2,18 +2,31 @@ from pydantic import BaseModel, Field, ConfigDict
 from typing import Literal, Optional
 from enum import Enum
 from .common import ArtifactMeta
-from .enums import ValidationStatus, SwitchportMode, AllowedVlansMode, NetworkDomain
+from .enums import ValidationStatus, SwitchportMode, AllowedVlansMode, NetworkDomain, RenderBackendType, RenderRole
 from .changes import VlanSpec, PortSpec
 
 
 class ConfigSnippet(BaseModel):
     model_config = ConfigDict(extra="forbid")
     device_name: str
+    backend_type: RenderBackendType | None = None
+    render_role: RenderRole | None = None
     path_hint: str | None = None
     cli_commands: list[str] = Field(default_factory=list)
     api_payload: dict | None = None
     commands: list[str] = Field(default_factory=list)
     rendered_text: str | None = None
+
+
+class ConfigRenderOutput(BaseModel):
+    """LLM-facing output model for the render agent.
+
+    Does not include ArtifactMeta — orchestration wraps this into a full
+    ConfigRender after the agent returns.
+    """
+    summary: str
+    snippets: list[ConfigSnippet] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class ConfigRender(BaseModel):
@@ -97,3 +110,17 @@ class ValidationReport(BaseModel):
     checks_run: list[str] = Field(default_factory=list)
     findings: list[Finding] = Field(default_factory=list)
     approved_for_execution: bool = False
+
+
+class ExecutionResult(BaseModel):
+    meta: ArtifactMeta
+    backend: str
+    status: str
+    detail: str
+    reference: str | None = None
+
+class RenderAcceptanceResult(BaseModel):
+    """Result of deterministic render acceptance validation."""
+    passed: bool
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)

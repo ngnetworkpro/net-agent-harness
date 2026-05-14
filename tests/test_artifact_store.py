@@ -16,8 +16,8 @@ def test_save_model(tmp_path: Path):
     store = ArtifactStore(tmp_path)
     model = ChangeRequest(
         meta=ArtifactMeta(run_id="run-1", artifact_id="change-1", created_by="test"),
-        scope=ScopeRef(site="HQ", device_names=["sw1"]),
         domain=NetworkDomain.VLAN,
+        scope=ScopeRef(site="HQ", device_names=["sw1"]),
         requested_change=RequestedChange(
             summary="Add VLAN 220",
             requested_by="tester",

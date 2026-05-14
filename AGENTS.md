@@ -51,8 +51,12 @@ Do not collapse these stages unless explicitly asked to redesign the architectur
 - Translate an approved diff into vendor-specific API operations or CLI commands.
 - Render does not decide whether a change is needed.
 - Render must consume an approved planned change or diff, not reinterpret the original natural-language request.
-- Prefer API-driven rendering for supported platforms.
-- Keep CLI/SSH rendering as fallback and for completeness.
+- Prefer API-driven rendering for supported platforms when there is no user preference.
+- If the user or environment specifies an approved Terraform or Ansible backend, that backend becomes primary.
+- When a user-selected Terraform or Ansible backend is primary, API may be rendered only as a labeled fallback when supported.
+- CLI/SSH stays fallback-only unless it is the only viable option.
+- Backend selection and fallback ordering must be deterministic in orchestration and must not be invented by render.
+- Every render snippet must carry explicit `backend_type` and `render_role` labels (primary or fallback).
 
 #### execute
 

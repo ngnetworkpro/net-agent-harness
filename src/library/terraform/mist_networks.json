@@ -1,0 +1,5 @@
+{
+  "Access":        { "vlan_id": "11" },
+  "Printers":      { "vlan_id": "21" },
+  "Security":      { "vlan_id": "31" }
+}

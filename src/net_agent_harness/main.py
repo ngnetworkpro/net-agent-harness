@@ -1,11 +1,12 @@
 import json
+import traceback
 import uuid
 from pathlib import Path
 import typer
 import asyncio
 from rich import print
+from pydantic_ai.exceptions import ModelHTTPError
 from .agents.change_planner import change_planner
-from .agents.config_render_agent import change_render_agent
 from .orchestration.stream_utils import run_agent_with_spinner
 from .config import settings
 from .models.artifacts import ConfigRender
@@ -13,8 +14,8 @@ from .models.changes import ChangeRequest
 from .models.common import ArtifactMeta
 from datetime import timezone, datetime
 from .models.enums import RunStage
+from .orchestration.coordinator import StageCoordinator
 from .orchestration.run_context import RunContextData
-from .orchestration.build_render import build_render_input
 from .services.artifact_store import ArtifactStore
 from .services.run_store import RunStore
 from .services.run_progress_reporter import RunProgressReporter
@@ -77,10 +78,12 @@ def plan(request: str, operator: str = 'local-user'):
     except typer.BadParameter as e:
         typer.secho(f"Error executing plan: {e}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
-    except Exception:
-        import logging
-        logging.exception("Unexpected error executing plan")
-        typer.secho("Unexpected error executing plan. See traceback.", fg=typer.colors.RED)
+    except ModelHTTPError as e:
+        typer.secho(f"API Connection Error: Failed to communicate with the model provider ({e.status_code}).\nDetails: {e.body}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    except Exception as e:
+        traceback.print_exc()
+        typer.secho(f"Error executing plan: {e}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
 
 async def _async_plan(request: str, operator: str = "local-user"):
@@ -224,26 +227,22 @@ async def _async_render(change_request: ChangeRequest) -> None:
     if plan_decision is None:
         raise ValueError("plan_decision is required for rendering")
 
-    render_input = build_render_input(change_request)
+    coordinator = StageCoordinator(artifact_store, run_store)
+    render_result, artifact_path = await coordinator.render(change_request)
 
-    render_result = await run_agent_with_spinner(
-        agent=change_render_agent,
-        prompt="",
-        deps=render_input,
-        model_settings={"temperature": 0.0},
-        message="Running Config Render Agent...",
-    )
-    artifact_path = artifact_store.save_model(change_request.meta.run_id, 'config_render', render_result)
     reporter.update("render", "completed", f"✅ render complete: {artifact_path}", artifact='config_render')
     print({'run_id': change_request.meta.run_id, 'artifact_path': str(artifact_path), 'output': render_result.model_dump(mode='json')})
 
 
-def _run_validate(config_render: ConfigRender) -> None:
+def _run_validate(
+        config_render: ConfigRender,
+        change_request: ChangeRequest | None = None,
+    ) -> None:
     """Core validate logic, callable from CLI or programmatically."""
     artifact_store = ArtifactStore(get_runs_root())
     run_store = RunStore(get_runs_root())
     run_store.update_stage(config_render.meta.run_id, 'validate', 'running')
-    validation_result = validate_config_render(config_render)
+    validation_result = validate_config_render(config_render, change_request)
     artifact_path = artifact_store.save_model(config_render.meta.run_id, 'validation_report', validation_result)
     final_status = 'completed' if validation_result.overall_status.value == 'pass' else validation_result.overall_status.value
     run_store.update_stage(
@@ -269,10 +268,12 @@ def render(change_request_file: Path):
     except typer.BadParameter as e:
         typer.secho(f"Error executing render: {e}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
-    except Exception:
-        import logging
-        logging.exception("Unexpected error executing render")
-        typer.secho("Unexpected error executing render. See traceback.", fg=typer.colors.RED)
+    except ModelHTTPError as e:
+        typer.secho(f"API Connection Error: Failed to communicate with the model provider ({e.status_code}).\nDetails: {e.body}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    except Exception as e:
+        traceback.print_exc()
+        typer.secho(f"Error executing render: {e}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
 
 
@@ -291,15 +292,21 @@ def run_stages(artifact_path: Path):
     change_request = ChangeRequest.model_validate_json(artifact_path.read_text())
     ensure_renderable(change_request)
     run_id = change_request.meta.run_id
-    # Render config
-    asyncio.run(_async_render(change_request))
-    # Validate
-    # Note: run_stages passes a ChangeRequest here, so we need to build the render first
-    # validate operates on a ConfigRender; for the pipeline, reload from disk
+    try:
+        asyncio.run(_async_render(change_request))
+    except ModelHTTPError as e:
+        typer.secho(f"API Connection Error: Failed to communicate with the model provider ({e.status_code}).\nDetails: {e.body}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    except Exception as e:
+        traceback.print_exc()
+        typer.secho(f"Error executing stage pipeline: {e}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+        
     render_artifact = get_runs_root() / run_id / 'config_render.json'
-    _run_validate(ConfigRender.model_validate_json(render_artifact.read_text()))
-    # # Finalize
-    # finalize(change_request)
+    _run_validate(
+        ConfigRender.model_validate_json(render_artifact.read_text()),
+        change_request,
+    )
     print(f"✅ Full pipeline complete: {run_id}")
 
 
