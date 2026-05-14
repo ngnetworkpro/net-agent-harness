@@ -51,8 +51,10 @@ Do not collapse these stages unless explicitly asked to redesign the architectur
 - Translate an approved diff into vendor-specific API operations or CLI commands.
 - Render does not decide whether a change is needed.
 - Render must consume an approved planned change or diff, not reinterpret the original natural-language request.
-- Prefer API-driven rendering for supported platforms.
-- Keep CLI/SSH rendering as fallback and for completeness.
+- Prefer API-driven rendering for supported platforms if there is no user preference.
+- Allow user- or environment-selected backends when an approved library already exists.
+- Keep CLI/SSH rendering available as fallback and for completeness.
+- Backend selection must be deterministic in orchestration and must not be invented by render.
 
 #### execute
 

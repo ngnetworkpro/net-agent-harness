@@ -13,6 +13,17 @@ class ConfigSnippet(BaseModel):
     rendered_text: str | None = None
 
 
+class ConfigRenderOutput(BaseModel):
+    """LLM-facing output model for the render agent.
+
+    Does not include ArtifactMeta — orchestration wraps this into a full
+    ConfigRender after the agent returns.
+    """
+    summary: str
+    snippets: list[ConfigSnippet] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class ConfigRender(BaseModel):
     meta: ArtifactMeta
     summary: str

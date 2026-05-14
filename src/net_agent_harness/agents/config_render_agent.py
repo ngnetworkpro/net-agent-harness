@@ -1,20 +1,20 @@
 from pydantic_ai import Agent, RunContext
 from ..config import settings
-from ..models.artifacts import ConfigRender, RenderRequest
+from ..models.artifacts import ConfigRenderOutput, RenderRequest
 from pydantic_ai.output import NativeOutput
 
 from ..agents.agent_factory import build_agent
 
 change_render_agent = build_agent(
     deps_type=RenderRequest,
-    output_type=NativeOutput(ConfigRender),
+    output_type=NativeOutput(ConfigRenderOutput),
 )
 
 
 @change_render_agent.output_validator
 async def _enforce_snippets(
-    ctx: RunContext[RenderRequest], output: ConfigRender
-) -> ConfigRender:
+    ctx: RunContext[RenderRequest], output: ConfigRenderOutput
+) -> ConfigRenderOutput:
     """Enforce that snippets are generated when payload contains operations."""
     deps = ctx.deps
     has_vlan_ops = hasattr(deps.payload, 'vlan_ops') and deps.payload.vlan_ops
@@ -96,7 +96,7 @@ def render_system_prompt(ctx: RunContext[RenderRequest]) -> str:
         '   Do NOT use placeholder text like "Awaiting Input" or "Render complete".',
         "",
         "## Output Format — REQUIRED",
-        "You MUST produce a ConfigRender with non-empty snippets for every device in the payload.",
+        "You MUST produce output with a summary string and non-empty snippets for every device in the payload.",
         "Each snippet represents a device's rendered configuration.",
         "",
         "For each device in the payload:",

@@ -1,4 +1,5 @@
 import json
+import traceback
 import uuid
 from pathlib import Path
 import typer
@@ -76,6 +77,7 @@ def plan(request: str, operator: str = 'local-user'):
     try:
         asyncio.run(_async_plan(request, operator))
     except Exception as e:
+        traceback.print_exc()
         typer.secho(f"Error executing plan: {e}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
 
@@ -221,16 +223,32 @@ async def _async_render(change_request: ChangeRequest) -> None:
 
     render_input = build_render_input(change_request)
 
-    render_result = await run_agent_with_spinner(
+    render_output = await run_agent_with_spinner(
         agent=change_render_agent,
-        prompt="",
+        prompt="Render from change request and render input",
         deps=render_input,
         model_settings={"temperature": 0.0},
-        message="Running Config Render Agent...",
+        message="Running Config Render Agent..."
     )
-    artifact_path = artifact_store.save_model(change_request.meta.run_id, 'config_render', render_result)
+
+    # Wrap LLM output into a durable ConfigRender artifact with proper metadata
+    run_id = change_request.meta.run_id
+    render_result = ConfigRender(
+        meta=ArtifactMeta(
+            run_id=run_id,
+            artifact_id=f"config-render-{run_id}",
+            version=1,
+            created_at=datetime.now(timezone.utc),
+            created_by=change_request.meta.created_by,
+        ),
+        summary=render_output.summary,
+        snippets=render_output.snippets,
+        warnings=render_output.warnings,
+    )
+
+    artifact_path = artifact_store.save_model(run_id, 'config_render', render_result)
     reporter.update("render", "completed", f"✅ render complete: {artifact_path}", artifact='config_render')
-    print({'run_id': change_request.meta.run_id, 'artifact_path': str(artifact_path), 'output': render_result.model_dump(mode='json')})
+    print({'run_id': run_id, 'artifact_path': str(artifact_path), 'output': render_result.model_dump(mode='json')})
 
 
 def _run_validate(
@@ -265,6 +283,7 @@ def render(change_request_file: Path):
     try:
         asyncio.run(_async_render(change_request))
     except Exception as e:
+        traceback.print_exc()
         typer.secho(f"Error executing render: {e}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
 
