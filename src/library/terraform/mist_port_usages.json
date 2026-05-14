@@ -1,0 +1,75 @@
+{
+  "access": {
+    "all_networks": false,
+    "bypass_auth_when_server_down_for_voip": false,
+    "description": "Port Profile for general access to corporate network",
+    "disable_autoneg": false,
+    "disabled": false,
+    "duplex": "auto",
+    "enable_qos": false,
+    "mac_limit": "0",
+    "mode": "access",
+    "persist_mac": false,
+    "poe_disabled": false,
+    "port_network": "Access",
+    "speed": "auto",
+    "storm_control": {},
+    "stp_edge": false
+  },
+  "dynamic": {
+    "bypass_auth_when_server_down_for_voip": false,
+    "mode": "dynamic",
+    "rules": [
+      {
+        "equals": "CANON",
+        "expression": "[0:5]",
+        "src": "lldp_system_description",
+        "usage": "printers"
+      },
+      {
+        "equals": "Mist",
+        "expression": "[0:4]",
+        "src": "lldp_system_description",
+        "usage": "ap"
+      },
+    ]
+  },
+  "printers": {
+    "all_networks": false,
+    "bypass_auth_when_server_down_for_voip": false,
+    "description": "Port profile for for network printers",
+    "disable_autoneg": false,
+    "disabled": false,
+    "duplex": "auto",
+    "enable_qos": false,
+    "mac_limit": "0",
+    "mode": "access",
+    "persist_mac": false,
+    "poe_disabled": false,
+    "port_network": "Printers",
+    "speed": "auto",
+    "storm_control": {},
+    "stp_edge": true,
+    "stp_no_root_port": false,
+    "stp_p2p": false
+  },
+  "security": {
+    "all_networks": false,
+    "bypass_auth_when_server_down_for_voip": false,
+    "description": "Port Profile for security devices",
+    "disable_autoneg": false,
+    "disabled": false,
+    "duplex": "auto",
+    "enable_qos": false,
+    "mac_limit": "0",
+    "mode": "access",
+    "persist_mac": false,
+    "poe_disabled": false,
+    "port_network": "Security",
+    "speed": "auto",
+    "storm_control": {},
+    "stp_edge": true,
+    "stp_no_root_port": false,
+    "stp_p2p": false
+  }
+}
