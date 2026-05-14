@@ -15,7 +15,8 @@ async def render_vlan_config(change_request: ChangeRequest) -> ConfigRender:
     intent_type = "set_access_vlan"
     mode = "access"
 
-    device_diff = plan_decision.diff[0].changes if plan_decision.diff else None
+    plan_decision = change_request.plan_decision
+    device_diff = plan_decision.diff[0].changes if plan_decision and plan_decision.diff else None
 
     if device_diff and device_diff.ports_to_update:
         first_port = device_diff.ports_to_update[0]
