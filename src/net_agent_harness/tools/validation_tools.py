@@ -213,6 +213,7 @@ def validate_config_render_acceptance(
         errors.append(f"run_id mismatch: '{config_render.meta.run_id}' vs '{change_request.meta.run_id}'.")
 
     device_primaries = {}
+    device_fallbacks = {}
     from ..config import settings
     selected_backend = settings.execution_backend
     
@@ -235,7 +236,7 @@ def validate_config_render_acceptance(
                     
         # Rule 4: Fallback snippets explicitly labeled
         if snippet.render_role == RenderRole.FALLBACK:
-            pass # Valid label
+            device_fallbacks[device] = device_fallbacks.get(device, 0) + 1
             
         if snippet.render_role == RenderRole.PRIMARY:
             device_primaries[device] = device_primaries.get(device, 0) + 1
@@ -264,13 +265,18 @@ def validate_config_render_acceptance(
         if snippet.backend_type == RenderBackendType.API and snippet.render_role == RenderRole.FALLBACK:
             warnings.append(f"API is provided as fallback for {device}.")
             
-    # Rule 3: Exactly one primary snippet per device
+    # Rule 3: Exactly one primary snippet per device, at most one fallback
     for rt in change_request.resolved_targets:
-        count = device_primaries.get(rt.name, 0)
-        if count == 0 and plan_decision and plan_decision.decision == PlanDecisionType.APPLY:
+        primary_count = device_primaries.get(rt.name, 0)
+        fallback_count = device_fallbacks.get(rt.name, 0)
+        
+        if primary_count == 0 and plan_decision and plan_decision.decision == PlanDecisionType.APPLY:
              errors.append(f"No primary snippet found for device {rt.name}.")
-        elif count > 1:
+        elif primary_count > 1:
              errors.append(f"Duplicate primary snippets found for device {rt.name}.")
+             
+        if fallback_count > 1:
+             errors.append(f"Duplicate fallback snippets found for device {rt.name}.")
 
     # Rule 10: Warnings must not hide a condition that should have blocked render
     if config_render.warnings and not errors:

@@ -49,3 +49,36 @@ def generate_cli_fallback_snippet(primary_snippet: ConfigSnippet) -> ConfigSnipp
         commands=cli_commands,
         rendered_text="\n".join(cli_commands)
     )
+
+def aggregate_and_label_snippets(
+    raw_snippets: list[ConfigSnippet],
+    primary_backend: RenderBackendType
+) -> list[ConfigSnippet]:
+    """Aggregate raw snippets by device, assign roles, and generate fallbacks."""
+    from ..models.enums import RenderRole
+
+    aggregated_raw: dict[str, ConfigSnippet] = {}
+    for snippet in raw_snippets:
+        if snippet.device_name in aggregated_raw:
+            existing = aggregated_raw[snippet.device_name]
+            existing.commands.extend(snippet.commands)
+            if snippet.rendered_text:
+                if existing.rendered_text:
+                    existing.rendered_text += "\n\n" + snippet.rendered_text
+                else:
+                    existing.rendered_text = snippet.rendered_text
+        else:
+            aggregated_raw[snippet.device_name] = snippet
+
+    final_snippets = []
+    for snippet in aggregated_raw.values():
+        snippet.backend_type = primary_backend
+        snippet.render_role = RenderRole.PRIMARY
+        final_snippets.append(snippet)
+        
+        if primary_backend != RenderBackendType.CLI:
+            fallback = generate_cli_fallback_snippet(snippet)
+            if fallback:
+                final_snippets.append(fallback)
+                
+    return final_snippets

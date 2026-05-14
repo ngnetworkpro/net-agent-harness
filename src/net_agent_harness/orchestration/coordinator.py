@@ -29,7 +29,7 @@ class StageCoordinator:
         )
         render_result = render_result_data.output
 
-        from .resolve_backend import resolve_render_backend, generate_cli_fallback_snippet
+        from .resolve_backend import resolve_render_backend, aggregate_and_label_snippets
         from ..models.enums import RenderRole, RenderBackendType
         
         platform = None
@@ -37,15 +37,7 @@ class StageCoordinator:
             platform = change_request.resolved_targets[0].platform
         primary_backend = resolve_render_backend(settings, platform)
 
-        final_snippets = []
-        for snippet in render_result.snippets:
-            snippet.backend_type = primary_backend
-            snippet.render_role = RenderRole.PRIMARY
-            final_snippets.append(snippet)
-            
-            if primary_backend != RenderBackendType.CLI:
-                fallback = generate_cli_fallback_snippet(snippet)
-                final_snippets.append(fallback)
+        final_snippets = aggregate_and_label_snippets(render_result.snippets, primary_backend)
         
         render_result.snippets = final_snippets
         

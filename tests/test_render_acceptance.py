@@ -68,6 +68,29 @@ def test_reject_duplicate_primary(base_change_request, base_config_render):
     assert not result.passed
     assert any("Duplicate primary snippets" in e for e in result.errors)
 
+def test_reject_duplicate_fallback(base_change_request, base_config_render):
+    settings.execution_backend = "direct_api"
+    # Make the first snippet primary, then add two fallbacks
+    base_config_render.snippets.append(
+        ConfigSnippet(
+            device_name="sw1",
+            backend_type=RenderBackendType.CLI,
+            render_role=RenderRole.FALLBACK,
+            rendered_text="!"
+        )
+    )
+    base_config_render.snippets.append(
+        ConfigSnippet(
+            device_name="sw1",
+            backend_type=RenderBackendType.CLI,
+            render_role=RenderRole.FALLBACK,
+            rendered_text="!"
+        )
+    )
+    result = validate_config_render_acceptance(base_change_request, base_config_render)
+    assert not result.passed
+    assert any("Duplicate fallback snippets" in e for e in result.errors)
+
 def test_terraform_primary_when_selected(base_change_request, base_config_render):
     settings.execution_backend = "terraform"
     base_config_render.snippets[0].backend_type = RenderBackendType.TERRAFORM

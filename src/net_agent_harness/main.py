@@ -5,6 +5,7 @@ from pathlib import Path
 import typer
 import asyncio
 from rich import print
+from pydantic_ai.exceptions import ModelHTTPError
 from .agents.change_planner import change_planner
 from .agents.config_render_agent import change_render_agent
 from .orchestration.stream_utils import run_agent_with_spinner
@@ -76,6 +77,9 @@ def ensure_renderable(change_request: ChangeRequest) -> None:
 def plan(request: str, operator: str = 'local-user'):
     try:
         asyncio.run(_async_plan(request, operator))
+    except ModelHTTPError as e:
+        typer.secho(f"API Connection Error: Failed to communicate with the model provider ({e.status_code}).\nDetails: {e.body}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
     except Exception as e:
         traceback.print_exc()
         typer.secho(f"Error executing plan: {e}", fg=typer.colors.RED)
@@ -231,7 +235,7 @@ async def _async_render(change_request: ChangeRequest) -> None:
         message="Running Config Render Agent..."
     )
 
-    from .orchestration.resolve_backend import resolve_render_backend, generate_cli_fallback_snippet
+    from .orchestration.resolve_backend import resolve_render_backend, aggregate_and_label_snippets
     from .models.enums import RenderBackendType, RenderRole
 
     # Determine primary backend from settings + platform
@@ -241,16 +245,7 @@ async def _async_render(change_request: ChangeRequest) -> None:
     primary_backend = resolve_render_backend(settings, platform)
 
     # Label snippets and generate fallbacks
-    final_snippets = []
-    for snippet in render_output.snippets:
-        snippet.backend_type = primary_backend
-        snippet.render_role = RenderRole.PRIMARY
-        final_snippets.append(snippet)
-        
-        # If the primary backend is not CLI, generate a CLI fallback deterministically
-        if primary_backend != RenderBackendType.CLI:
-            fallback = generate_cli_fallback_snippet(snippet)
-            final_snippets.append(fallback)
+    final_snippets = aggregate_and_label_snippets(render_output.snippets, primary_backend)
 
     # Wrap LLM output into a durable ConfigRender artifact with proper metadata
     run_id = change_request.meta.run_id
@@ -303,6 +298,9 @@ def render(change_request_file: Path):
     )
     try:
         asyncio.run(_async_render(change_request))
+    except ModelHTTPError as e:
+        typer.secho(f"API Connection Error: Failed to communicate with the model provider ({e.status_code}).\nDetails: {e.body}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
     except Exception as e:
         traceback.print_exc()
         typer.secho(f"Error executing render: {e}", fg=typer.colors.RED)
@@ -324,7 +322,16 @@ def run_stages(artifact_path: Path):
     change_request = ChangeRequest.model_validate_json(artifact_path.read_text())
     ensure_renderable(change_request)
     run_id = change_request.meta.run_id
-    asyncio.run(_async_render(change_request))
+    try:
+        asyncio.run(_async_render(change_request))
+    except ModelHTTPError as e:
+        typer.secho(f"API Connection Error: Failed to communicate with the model provider ({e.status_code}).\nDetails: {e.body}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    except Exception as e:
+        traceback.print_exc()
+        typer.secho(f"Error executing stage pipeline: {e}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+        
     render_artifact = get_runs_root() / run_id / 'config_render.json'
     _run_validate(
         ConfigRender.model_validate_json(render_artifact.read_text()),
