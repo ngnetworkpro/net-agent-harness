@@ -4,7 +4,14 @@ The tool layer is where the network version really differs.
 The agents should not use raw unrestricted shell access if you can avoid it; narrow, typed tools are safer and easier to audit.
 PydanticAI’s toolset and approval features are useful here because you can define exactly which calls are allowed and which ones need explicit signoff.
 
-## Recommended tools:
+## Backend and rendering rules
+
+- Render consumes approved plan artifacts; it does not re-decide intent.
+- Prefer API-backed rendering for supported platforms unless another backend is explicitly selected.
+- Keep CLI/SSH as fallback-only unless it is the only viable backend.
+- Every render snippet should include explicit `backend_type` and `render_role` (`primary` or `fallback`).
+
+## Recommended tools
 
 - get_inventory(site|device|role)
 - get_topology(device|site)

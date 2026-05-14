@@ -4,7 +4,7 @@ Personal lab project for a network-engineering agent harness focused on safe, st
 
 ## Project Goal
 
-Build a model-backed harness that can take a plain-English network change request and walk it through a structured, multi-stage workflow — planning, config rendering, and validation — without ever touching live infrastructure. The goal is to prove the harness shape, typed artifact contracts, and model workflow in a safe prototype before any real network systems are introduced.
+Build a model-backed harness that can take a plain-English network change request and walk it through a structured, staged workflow — `route` → `plan` → `render` → `execute` → `review` — without ever touching live infrastructure by default. The goal is to prove the harness shape, typed artifact contracts, and model workflow in a safe prototype before any real network systems are introduced.
 
 The longer-term vision is a harness that supports network-engineering workflows such as change planning, inventory/topology discovery, config rendering, validation and compliance checks, incident summarization, and (much later) tightly controlled execution. The current version starts with one vertical slice so each layer can be tested end to end before the system grows more complex.
 
@@ -33,7 +33,17 @@ The pipeline currently handles end-to-end VLAN change planning:
 - Evaluates whether the desired state is already satisfied (`no_op`), requires changes (`apply`), or cannot proceed safely (`blocked`), producing a structured `PlanDecision` with a `VlanDiff`
 - Renders a candidate `ConfigRender` artifact from an approved change request
 - Validates the rendered candidate into a `ValidationReport` artifact
-- Stops before any execution against live infrastructure
+- Keeps execution disabled by default and treats validation/review as the final active stage in this prototype
+
+## Recent updates
+
+Recent architecture and safety updates now reflected in this README:
+
+- Hardened artifact and model contracts with stricter schema validation (`extra="forbid"` on key models)
+- Tightened typed modeling for requested desired state, VLAN spec, and port spec fields
+- Added path traversal protection for run/artifact storage identifiers
+- Improved inventory resolution flow and NetBox integration validation behavior
+- Strengthened render/planning boundaries so deterministic orchestration owns routing, target resolution, and plan decision gating
 
 ## Architecture
 
@@ -49,6 +59,15 @@ The repo follows an artifact-first, staged pipeline:
 - `policies/` is reserved for approvals, scope checks, and future guardrails
 
 This layout keeps orchestration and policy in application code rather than hiding critical behavior inside prompts alone.
+
+## Documentation map
+
+- `docs/01_architecture.md` — current staged architecture and stage ownership
+- `docs/02_lifecycle.md` — lifecycle flow and stage gates
+- `docs/03_control_plane.md` — deterministic orchestration and safety responsibilities
+- `docs/04_artifact_model.md` — artifact contracts and authoritative fields
+- `docs/05_tool_layer.md` — tool-layer boundaries and backend labeling
+- `docs/06_permissions_model.md` — permissions and approval expectations
 
 ## Repository layout
 
@@ -284,7 +303,8 @@ The exact values will vary by model, but the top-level schema remains stable bec
 ## Running tests
 
 ```bash
-pytest
+ruff check .
+python -m pytest -q
 ```
 
 ## Safety boundaries
