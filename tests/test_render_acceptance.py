@@ -94,6 +94,9 @@ def test_reject_duplicate_fallback(base_change_request, base_config_render):
 def test_terraform_primary_when_selected(base_change_request, base_config_render):
     settings.execution_backend = "terraform"
     base_config_render.snippets[0].backend_type = RenderBackendType.TERRAFORM
+    base_config_render.snippets[0].rendered_text = (
+        'resource "mist_org_networktemplate" "offices" {\n  networks = local.mist_networks\n}'
+    )
     result = validate_config_render_acceptance(base_change_request, base_config_render)
     assert result.passed
 
@@ -112,6 +115,9 @@ def test_api_primary_no_preference(base_change_request, base_config_render):
 def test_api_fallback_with_terraform_primary(base_change_request, base_config_render):
     settings.execution_backend = "terraform"
     base_config_render.snippets[0].backend_type = RenderBackendType.TERRAFORM
+    base_config_render.snippets[0].rendered_text = (
+        'resource "mist_org_networktemplate" "offices" {\n  networks = local.mist_networks\n}'
+    )
     # Add API as fallback
     base_config_render.snippets.append(
         ConfigSnippet(
@@ -124,6 +130,24 @@ def test_api_fallback_with_terraform_primary(base_change_request, base_config_re
     result = validate_config_render_acceptance(base_change_request, base_config_render)
     assert result.passed
     assert any("API is provided as fallback" in w for w in result.warnings)
+
+def test_reject_terraform_primary_with_invalid_content(base_change_request, base_config_render):
+    settings.execution_backend = "terraform"
+    base_config_render.snippets[0].backend_type = RenderBackendType.TERRAFORM
+    base_config_render.snippets[0].rendered_text = "vlan 220\ninterface ge-0/0/1\nswitchport access vlan 220"
+    result = validate_config_render_acceptance(base_change_request, base_config_render)
+    assert not result.passed
+    assert any("Terraform primary snippet" in e for e in result.errors)
+
+def test_reject_terraform_primary_when_cli_shaped(base_change_request, base_config_render):
+    settings.execution_backend = "terraform"
+    base_config_render.snippets[0].backend_type = RenderBackendType.TERRAFORM
+    base_config_render.snippets[0].rendered_text = (
+        'resource "mist_org_networktemplate" "offices" {}\ninterface ge-0/0/1'
+    )
+    result = validate_config_render_acceptance(base_change_request, base_config_render)
+    assert not result.passed
+    assert any("appears CLI-shaped" in e for e in result.errors)
 
 def test_reject_malformed_json_payload(base_change_request, base_config_render):
     settings.execution_backend = "direct_api"
