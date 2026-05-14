@@ -131,7 +131,7 @@ def test_api_fallback_with_terraform_primary(base_change_request, base_config_re
     assert result.passed
     assert any("API is provided as fallback" in w for w in result.warnings)
 
-def test_reject_terraform_primary_with_cli_shaped_content(base_change_request, base_config_render):
+def test_reject_terraform_primary_with_invalid_content(base_change_request, base_config_render):
     settings.execution_backend = "terraform"
     base_config_render.snippets[0].backend_type = RenderBackendType.TERRAFORM
     base_config_render.snippets[0].rendered_text = "vlan 220\ninterface ge-0/0/1\nswitchport access vlan 220"

@@ -189,7 +189,7 @@ class TerraformBackendAdapter(BackendAdapter):
     def _load_local_terraform_source(self) -> tuple[dict, str]:
         source_dir = Path(settings.terraform_source_dir)
         if not source_dir.is_absolute():
-            repo_root = Path(__file__).resolve().parents[4]
+            repo_root = self._find_repo_root()
             source_dir = repo_root / source_dir
         networks_path = source_dir / settings.terraform_source_networks_file
         template_path = source_dir / settings.terraform_source_template_file
@@ -225,6 +225,8 @@ class TerraformBackendAdapter(BackendAdapter):
     async def _fetch_github_file(self, file_path: str) -> str:
         assert settings.github_token is not None
         assert settings.github_repo is not None
+        if ".." in Path(file_path).parts:
+            raise ValueError(f"Invalid GitHub source path: {file_path}")
 
         token = settings.github_token.get_secret_value()
         headers = {
@@ -276,6 +278,12 @@ class TerraformBackendAdapter(BackendAdapter):
         terraform_markers = ("resource ", "terraform {", "locals {", "module ", "data ")
         if not any(marker in content.lower() for marker in terraform_markers):
             raise ValueError(f"Terraform source template is not Terraform-shaped: {source_label}")
+
+    def _find_repo_root(self) -> Path:
+        for parent in Path(__file__).resolve().parents:
+            if (parent / "pyproject.toml").exists():
+                return parent
+        raise RuntimeError("Unable to resolve repository root from terraform backend path")
 
     def _make_meta(self, change_request: ChangeRequest) -> ArtifactMeta:
         return ArtifactMeta(
