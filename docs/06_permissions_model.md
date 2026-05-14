@@ -3,6 +3,8 @@
 A concrete permissions model is critical here because execution risk is high.
 This table maps the network roles to the tool-layer privileges we defined in the previous section.
 
+Execution-oriented permissions are intentionally constrained in this repository’s current prototype, where execution is disabled by default and review artifacts are the primary endpoint.
+
 | Role                    | Read inventory | Read device state | Render config | Execute commands             | Push config             | Notes                                                                                |
 | ----------------------- | -------------- | ----------------- | ------------- | ---------------------------- | ----------------------- | ------------------------------------------------------------------------------------ |
 | **Inventory agent**     | Yes (permit)   | Limited (permit)  | No            | No                           | No                      | Can query inventory and limited status, but cannot change topology or configuration. |
