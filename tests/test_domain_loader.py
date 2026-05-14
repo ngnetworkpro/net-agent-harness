@@ -1,8 +1,10 @@
 import pytest
 from net_agent_harness.orchestration.domain_loader import load_domain_context, DomainLoadError
 
+from net_agent_harness.models.enums import NetworkDomain
+
 def test_load_vlan_domain_context():
-    ctx = load_domain_context("vlan")
+    ctx = load_domain_context(NetworkDomain.VLAN)
     
     assert ctx.domain == "vlan"
     assert "VLAN provisioning" in ctx.description
@@ -26,4 +28,4 @@ def test_load_vlan_domain_context():
 
 def test_load_generic_domain_context():
     with pytest.raises(DomainLoadError):
-        load_domain_context("generic")
+        load_domain_context(NetworkDomain.OTHER)

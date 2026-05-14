@@ -8,7 +8,25 @@ async def run_agent_with_spinner(
     deps=None,
     model_settings=None,
     message="Initializing...",
+    stream: bool = False,
 ):
+    """Run a pydantic-ai agent with a Rich spinner.
+
+    Args:
+        stream: If True (default), use streaming events for real-time status
+                updates. Set to False when the provider does not support SSE
+                streaming with structured output (e.g. NVIDIA NIM endpoints
+                that send empty SSE data chunks).
+    """
+    if not stream:
+        with console.status(message):
+            result = await agent.run(
+                prompt,
+                deps=deps,
+                model_settings=model_settings,
+            )
+            return result.output
+
     with console.status(message) as status:
         async for event in agent.run_stream_events(
             prompt,

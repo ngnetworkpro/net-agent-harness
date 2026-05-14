@@ -1,6 +1,6 @@
 from ..models.changes import ChangeRequest
 from ..models.domain import NetworkDomain
-from ..models.artifacts import RenderRequest, VlanRenderPayload, VlanRenderOp, OperationType, RenderTarget
+from ..models.artifacts import RenderRequest, VlanRenderPayload, VlanRenderOp, VlanInterfaceRenderOp, OperationType, RenderTarget
 
 def build_render_input(change_request: ChangeRequest):
     if change_request.domain == NetworkDomain.VLAN:
@@ -15,23 +15,26 @@ def build_vlan_render_input(change_request: ChangeRequest):
     vlan_ops = []
     interface_ops = []
     for change in change_request.plan_decision.diff:
-        if change.plan_decision.diff.vlans:
-            for vlan_spec in change.plan_decision.diff.vlans:
+        if change.changes.vlans_to_create:
+            for vlan_spec in change.changes.vlans_to_create:
                 vlan_ops.append(
                     VlanRenderOp(
                         vlan_id=vlan_spec.id,
                         vlan_name=vlan_spec.name if vlan_spec.name else None,
                         operation=OperationType.ENSURE_PRESENT,
-                        target=change.device
+                        target=RenderTarget(name=change.device)
                     )
                 )
 
-        interface_ops = [
-            VlanInterfaceRenderOp(
-                interface_name=[p.interface for p in change.plan_decision.diff.interfaces],
-                target=RenderTarget(name=change.device),
+        for port_spec in change.changes.ports_to_update:
+            interface_ops.append(
+                VlanInterfaceRenderOp(
+                    interface_name=port_spec.interface,
+                    target=RenderTarget(name=change.device),
+                    access_vlan=port_spec.vlan_id if port_spec.mode == "access" else None,
+                    switchport_mode=port_spec.mode,
+                )
             )
-        ]
     
 
     return RenderRequest(
