@@ -281,7 +281,12 @@ def validate_config_render_acceptance(
                     errors.append(f"CLI is primary for {device}, but expected {expected.value}.")
 
             if snippet.backend_type == RenderBackendType.TERRAFORM:
-                primary_text = snippet.rendered_text or "\n".join(snippet.commands)
+                if not snippet.rendered_text:
+                    errors.append(
+                        f"Terraform primary snippet for {device} is missing rendered_text."
+                    )
+                    continue
+                primary_text = snippet.rendered_text
                 text_lower = primary_text.lower()
                 if not any(marker in text_lower for marker in TERRAFORM_MARKERS):
                     errors.append(

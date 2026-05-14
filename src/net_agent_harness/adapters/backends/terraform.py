@@ -1,7 +1,7 @@
 import json
 import base64
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from textwrap import indent
 from uuid import uuid4
 
@@ -223,9 +223,13 @@ class TerraformBackendAdapter(BackendAdapter):
         return current, f"github:{settings.github_repo}:{networks_path}"
 
     async def _fetch_github_file(self, file_path: str) -> str:
-        assert settings.github_token is not None
-        assert settings.github_repo is not None
-        if ".." in Path(file_path).parts:
+        if not settings.github_token:
+            raise ValueError("NET_AGENT_GITHUB_TOKEN is not set")
+        if not settings.github_repo:
+            raise ValueError("NET_AGENT_GITHUB_REPO is not set")
+
+        normalized_path = PurePosixPath(file_path)
+        if normalized_path.is_absolute() or ".." in normalized_path.parts:
             raise ValueError(f"Invalid GitHub source path: {file_path}")
 
         token = settings.github_token.get_secret_value()
