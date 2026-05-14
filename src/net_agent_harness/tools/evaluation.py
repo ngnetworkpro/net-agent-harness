@@ -143,8 +143,7 @@ def _evaluate_vlan_operations(
         attrs = iface_op.get("attributes", {})
         iface_name = attrs.get("name")
         access_vlan = attrs.get("access_vlan")
-        attrs.get("native_vlan")
-        attrs.get("allowed_vlans", [])
+        # Removed unused attribute lookups
 
         if iface_name is None:
             return _blocked("interface name is required for interface operations.")
