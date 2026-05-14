@@ -19,6 +19,14 @@ class Settings(BaseSettings):
     nvidia_model: str = 'minimaxai/minimax-m2.7' # optional 'mistralai/mistral-nemotron'
     inventory_source: str = 'mock'
     execution_backend: str = "direct_api"
+    terraform_render_source: str = "auto"  # auto | local | github
+    terraform_source_dir: str = "src/library/terraform"
+    terraform_source_networks_file: str = "mist_networks.json"
+    terraform_source_template_file: str = "mist.tf"
+    terraform_networks_file: str | None = None
+    github_repo: str | None = None
+    github_token: SecretStr | None = None
+    github_base_branch: str = "main"
     require_approval_for_execute: bool = True
     runs_dir: Path = Path('runs')
     netbox_url: str | None = None

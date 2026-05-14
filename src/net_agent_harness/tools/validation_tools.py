@@ -3,10 +3,30 @@ from ..models.changes import ChangeRequest
 from ..models.common import ArtifactMeta
 from ..models.enums import ValidationStatus, PlanDecisionType, RenderBackendType, RenderRole
 import json
+import re
 import yaml
 
 
 REQUIRED_SAFETY_MARKERS = ["! Candidate config"]
+TERRAFORM_MARKERS = (
+    "terraform {",
+    "resource ",
+    "locals {",
+    "module ",
+    "data ",
+    "variable ",
+    "output ",
+    "jsondecode(",
+    "jsonencode(",
+)
+CLI_PRIMARY_PATTERNS = (
+    r"^\s*interface\s+\S+",
+    r"^\s*switchport\b",
+    r"^\s*hostname\s+\S+",
+    r"^\s*router\s+\S+",
+    r"^\s*ip address\s+\S+",
+    r"^\s*vlan\s+\d+\b",
+)
 
 
 def validate_config_render(
@@ -259,6 +279,21 @@ def validate_config_render_acceptance(
                 expected = resolve_render_backend(settings, platform)
                 if expected != RenderBackendType.CLI:
                     errors.append(f"CLI is primary for {device}, but expected {expected.value}.")
+
+            if snippet.backend_type == RenderBackendType.TERRAFORM:
+                primary_text = snippet.rendered_text or "\n".join(snippet.commands)
+                text_lower = primary_text.lower()
+                if not any(marker in text_lower for marker in TERRAFORM_MARKERS):
+                    errors.append(
+                        f"Terraform primary snippet for {device} is not Terraform-shaped."
+                    )
+                if any(
+                    re.search(pattern, primary_text, re.IGNORECASE | re.MULTILINE)
+                    for pattern in CLI_PRIMARY_PATTERNS
+                ):
+                    errors.append(
+                        f"Terraform primary snippet for {device} appears CLI-shaped."
+                    )
 
         # Rule 7: API may be fallback when Terraform/Ansible is primary
         if snippet.backend_type == RenderBackendType.API and snippet.render_role == RenderRole.FALLBACK:

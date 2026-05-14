@@ -2,6 +2,7 @@ import json
 import base64
 from datetime import datetime, timezone
 from pathlib import Path
+from textwrap import indent
 from uuid import uuid4
 
 import httpx
@@ -10,21 +11,16 @@ from net_agent_harness.adapters.backends.base import BackendAdapter
 from net_agent_harness.config import settings
 from net_agent_harness.models.artifacts import ArtifactMeta, ConfigRender, ConfigSnippet, ExecutionResult
 from net_agent_harness.models.changes import ChangeRequest
+from net_agent_harness.models.enums import RenderBackendType, RenderRole
 
 
 class TerraformBackendAdapter(BackendAdapter):
 
     async def render(self, change_request: ChangeRequest) -> ConfigRender:
-        if not settings.terraform_networks_file:
-            raise ValueError("NET_AGENT_TERRAFORM_NETWORKS_FILE is not set")
-        networks_path = Path(settings.terraform_networks_file)
-        if not networks_path.exists():
-            raise FileNotFoundError(f"networks.json not found at {networks_path}")
+        current, source_label = await self._load_terraform_source()
 
-        current = json.loads(networks_path.read_text())
-
-        # Collect VLANs to add from plan_decision diff
-        additions: dict[str, str] = {}  # name -> vlan_id string
+        # Collect VLANs to add from plan_decision diff, grouped per device
+        additions_by_device: dict[str, dict[str, str]] = {}
         if change_request.plan_decision:
             if change_request.plan_decision.decision.value != "apply":
                 return ConfigRender(
@@ -32,34 +28,50 @@ class TerraformBackendAdapter(BackendAdapter):
                     summary=f"No changes required: decision is '{change_request.plan_decision.decision.value}'.",
                 )
             for device_change in change_request.plan_decision.diff:
+                additions = additions_by_device.setdefault(device_change.device, {})
                 for vlan in device_change.changes.vlans_to_create:
                     additions[vlan.name] = str(vlan.id)
 
-        if not additions:
+        if not any(additions_by_device.values()):
             return ConfigRender(
                 meta=self._make_meta(change_request),
                 summary="No VLAN additions detected in plan decision.",
                 warnings=["plan_decision contains no vlans_to_create entries"],
             )
 
-        diff_lines = [f'  // Current: {len(current)} networks']
-        for name, vlan_id in additions.items():
-            diff_lines.append(f'+ "{name}": {{"vlan_id": "{vlan_id}"}}')
+        snippets: list[ConfigSnippet] = []
+        for device_name, additions in additions_by_device.items():
+            if not additions:
+                continue
 
-        # Store additions as JSON commands for apply() to consume
-        commands = [json.dumps({"name": name, "vlan_id": vlan_id}) for name, vlan_id in additions.items()]
+            merged_networks = dict(current)
+            merged_networks.update({name: {"vlan_id": vlan_id} for name, vlan_id in additions.items()})
+            rendered_text = self._render_primary_terraform_snippet(
+                source_label=source_label,
+                device_name=device_name,
+                networks=merged_networks,
+            )
 
-        snippet = ConfigSnippet(
-            device_name="mist_org_networktemplate.offices",
-            path_hint="networks.json",
-            commands=commands,
-            rendered_text="\n".join(diff_lines),
-        )
+            commands = [
+                json.dumps({"name": name, "vlan_id": vlan_id})
+                for name, vlan_id in additions.items()
+            ]
+
+            snippets.append(
+                ConfigSnippet(
+                    device_name=device_name,
+                    backend_type=RenderBackendType.TERRAFORM,
+                    render_role=RenderRole.PRIMARY,
+                    path_hint=source_label,
+                    commands=commands,
+                    rendered_text=rendered_text,
+                )
+            )
 
         return ConfigRender(
             meta=self._make_meta(change_request),
-            summary=f"Terraform: add {len(additions)} VLAN(s) to networks.json → GitHub PR targeting '{settings.github_base_branch}'",
-            snippets=[snippet],
+            summary=f"Terraform: source-backed render from {source_label} for {len(snippets)} device(s)",
+            snippets=snippets,
         )
 
     async def apply(self, config_render: ConfigRender) -> ExecutionResult:
@@ -157,6 +169,113 @@ class TerraformBackendAdapter(BackendAdapter):
                 raise RuntimeError(f"GitHub API error creating PR: HTTP {pr_resp.status_code}")
 
             return pr_resp.json()["html_url"]
+
+    async def _load_terraform_source(self) -> tuple[dict, str]:
+        source_mode = settings.terraform_render_source.strip().lower()
+        if source_mode not in {"auto", "local", "github"}:
+            raise ValueError(
+                "NET_AGENT_TERRAFORM_RENDER_SOURCE must be one of: auto, local, github"
+            )
+
+        if source_mode in {"auto", "local"}:
+            try:
+                return self._load_local_terraform_source()
+            except FileNotFoundError:
+                if source_mode == "local":
+                    raise
+
+        return await self._load_github_terraform_source()
+
+    def _load_local_terraform_source(self) -> tuple[dict, str]:
+        source_dir = Path(settings.terraform_source_dir)
+        if not source_dir.is_absolute():
+            repo_root = Path(__file__).resolve().parents[4]
+            source_dir = repo_root / source_dir
+        networks_path = source_dir / settings.terraform_source_networks_file
+        template_path = source_dir / settings.terraform_source_template_file
+
+        if not networks_path.exists():
+            raise FileNotFoundError(f"Local Terraform source file not found: {networks_path}")
+        if not template_path.exists():
+            raise FileNotFoundError(f"Local Terraform source file not found: {template_path}")
+
+        self._validate_terraform_template_text(template_path.read_text(), f"local:{template_path}")
+        current = json.loads(networks_path.read_text())
+        return current, f"local:{networks_path}"
+
+    async def _load_github_terraform_source(self) -> tuple[dict, str]:
+        if not settings.github_repo:
+            raise ValueError("NET_AGENT_GITHUB_REPO is not set")
+        if not settings.github_token:
+            raise ValueError("NET_AGENT_GITHUB_TOKEN is not set")
+
+        source_dir = settings.terraform_source_dir.strip("/")
+        networks_path = f"{source_dir}/{settings.terraform_source_networks_file}"
+        template_path = f"{source_dir}/{settings.terraform_source_template_file}"
+
+        networks_content = await self._fetch_github_file(networks_path)
+        template_content = await self._fetch_github_file(template_path)
+        self._validate_terraform_template_text(
+            template_content,
+            f"github:{settings.github_repo}:{template_path}",
+        )
+        current = json.loads(networks_content)
+        return current, f"github:{settings.github_repo}:{networks_path}"
+
+    async def _fetch_github_file(self, file_path: str) -> str:
+        assert settings.github_token is not None
+        assert settings.github_repo is not None
+
+        token = settings.github_token.get_secret_value()
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        url = f"/repos/{settings.github_repo}/contents/{file_path}"
+        params = {"ref": settings.github_base_branch}
+
+        async with httpx.AsyncClient(headers=headers, base_url="https://api.github.com") as client:
+            response = await client.get(url, params=params)
+        if response.status_code == 404:
+            raise FileNotFoundError(
+                f"GitHub Terraform source file not found: {file_path} in {settings.github_repo}@{settings.github_base_branch}"
+            )
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"GitHub source lookup failed for {file_path}: HTTP {response.status_code}"
+            )
+        payload = response.json()
+        if payload.get("encoding") != "base64" or "content" not in payload:
+            raise RuntimeError(f"Unexpected GitHub contents payload for {file_path}")
+        return base64.b64decode(payload["content"]).decode()
+
+    def _render_primary_terraform_snippet(
+        self,
+        *,
+        source_label: str,
+        device_name: str,
+        networks: dict,
+    ) -> str:
+        networks_json = json.dumps(networks, indent=2, sort_keys=True)
+        return (
+            f"# Terraform primary snippet for {device_name}\n"
+            f"# Canonical source: {source_label}\n"
+            "locals {\n"
+            "  mist_networks = jsondecode(<<JSON\n"
+            f"{indent(networks_json, '    ')}\n"
+            "  JSON\n"
+            "  )\n"
+            "}\n\n"
+            'resource "mist_org_networktemplate" "offices" {\n'
+            "  networks = local.mist_networks\n"
+            "}\n"
+        )
+
+    def _validate_terraform_template_text(self, content: str, source_label: str) -> None:
+        terraform_markers = ("resource ", "terraform {", "locals {", "module ", "data ")
+        if not any(marker in content.lower() for marker in terraform_markers):
+            raise ValueError(f"Terraform source template is not Terraform-shaped: {source_label}")
 
     def _make_meta(self, change_request: ChangeRequest) -> ArtifactMeta:
         return ArtifactMeta(
