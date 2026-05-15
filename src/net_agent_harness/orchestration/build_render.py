@@ -11,10 +11,20 @@ def build_render_input(change_request: ChangeRequest):
 
 def build_vlan_render_input(change_request: ChangeRequest):
     """Build VLAN render input from change request."""
+    if change_request.plan_decision is None:
+        raise ValueError("plan_decision is required to build render input.")
+    if change_request.plan_decision.decision.value != "apply":
+        raise ValueError(
+            f"Render rejected: plan decision is '{change_request.plan_decision.decision.value}', expected 'apply'."
+        )
 
     vlan_ops = []
     interface_ops = []
     for change in change_request.plan_decision.diff:
+        if change.changes.vlans_to_remove:
+            raise ValueError(
+                f"Render rejected: VLAN removal is not supported for device '{change.device}'."
+            )
         if change.changes.vlans_to_create:
             for vlan_spec in change.changes.vlans_to_create:
                 vlan_ops.append(

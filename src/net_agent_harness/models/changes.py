@@ -69,7 +69,7 @@ class RequestedChange(BaseModel):
         default_factory=list,
         description="Explicit constraints stated in the request. Return an empty list if none are provided."
     )
-    desired_state: dict[str, Any] | VlanDesiredState = Field(
+    desired_state: VlanDesiredState | dict[str, Any] = Field(
         default_factory=dict,
         description="The desired state of the network after the change. This is a structured dictionary representing the desired configuration."
     )
@@ -108,6 +108,10 @@ class VlanChange(BaseModel):
     vlans_to_create: list[VlanSpec] = Field(
         default_factory=list,
         description="VLANs that must be created on the target device",
+    )
+    vlans_to_remove: list[VlanSpec] = Field(
+        default_factory=list,
+        description="VLANs that must be removed from the target device",
     )
     ports_to_update: list[PortSpec] = Field(
         default_factory=list,

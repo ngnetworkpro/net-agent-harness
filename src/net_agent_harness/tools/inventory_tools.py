@@ -178,6 +178,49 @@ def lookup_device_context(
         "ip_addresses": ips_payload.get("results", []),
     }
 
+
+def lookup_device_context_sync(
+    inventory_source: str,
+    site: str | None = None,
+    device_name: str | None = None,
+) -> dict:
+    source = (inventory_source or "mock").lower()
+
+    if source != "netbox":
+        snapshot = _mock_inventory_snapshot(site=site, device_name=device_name)
+        first = snapshot.get("results", [{}])[0] if snapshot.get("results") else {}
+        return {
+            "source": "mock",
+            "device": first,
+            "interfaces": first.get("interfaces", []),
+            "ip_addresses": [],
+        }
+
+    adapter = build_netbox_adapter_from_settings()
+    payload = adapter.get_devices(site=site, name=device_name, limit=1)
+
+    if not payload.get("results"):
+        return {
+            "source": "netbox",
+            "device": None,
+            "interfaces": [],
+            "ip_addresses": [],
+        }
+
+    device_raw = payload["results"][0]
+    device = _normalize_device(device_raw)
+    device_id = device_raw.get("id")
+
+    interfaces_payload = adapter.get_interfaces(device_id=device_id)
+    ips_payload = adapter.get_ip_addresses(device_id=device_id)
+
+    return {
+        "source": "netbox",
+        "device": device,
+        "interfaces": [_normalize_interface(item) for item in interfaces_payload.get("results", [])],
+        "ip_addresses": [_normalize_ip(item) for item in ips_payload.get("results", [])],
+    }
+
 def _normalize_interface(item: dict) -> dict:
     return {
         "id": item.get("id"),

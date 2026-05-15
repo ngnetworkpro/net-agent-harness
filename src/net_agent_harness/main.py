@@ -1,4 +1,5 @@
 import json
+import re
 import traceback
 import uuid
 from pathlib import Path
@@ -30,6 +31,12 @@ from .orchestration.domain_loader import load_domain_context, DomainLoadError
 app = typer.Typer(help='Network agent harness prototype')
 run_app = typer.Typer(help='Run end-to-end stage pipelines')
 app.add_typer(run_app, name='run')
+
+
+def _validate_run_id(run_id: str) -> str:
+    if not re.match(r'^[\w-]+$', run_id):
+        raise typer.BadParameter(f"Invalid run_id: {run_id!r}")
+    return run_id
 
 
 def get_runs_root() -> Path:
@@ -174,12 +181,7 @@ async def _async_plan(request: str, operator: str = "local-user"):
             desired_state=normalized_desired_state,
             inventory_source=settings.inventory_source,
         )
-    # 4. ENFORCE
-    reporter.update(run_stage.value, "running", "🔧 Enforcing plan decision...")
     planned.plan_decision = plan_decision
-    # 5. Persist the final object (already planned + evaluated)
-    artifact_path = artifact_store.save_model(run_id, "change_request", planned)
-
     reporter.update(run_stage.value, "running", "💾 Persisting change request artifact...")
 
     artifact = ChangeRequest(
@@ -312,6 +314,7 @@ def run_stages(artifact_path: Path):
 
 @app.command()
 def show_run(run_id: str):
+    run_id = _validate_run_id(run_id)
     run_dir = get_runs_root() / run_id
     if not run_dir.exists():
         raise typer.BadParameter(f'Run directory not found: {run_dir}')

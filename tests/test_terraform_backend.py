@@ -193,3 +193,44 @@ async def test_render_github_source_missing_remote_file(monkeypatch):
 
     with pytest.raises(FileNotFoundError, match="GitHub Terraform source file not found"):
         await TerraformBackendAdapter().render(_build_change_request())
+
+
+@pytest.mark.asyncio
+async def test_apply_rejects_malformed_command_entries(tmp_path, monkeypatch):
+    adapter = TerraformBackendAdapter()
+    source_dir = tmp_path / "tf-source"
+    source_dir.mkdir()
+    (source_dir / "mist_networks.json").write_text('{"Access": {"vlan_id": "11"}}')
+    (source_dir / "mist.tf").write_text('resource "mist_org_networktemplate" "offices" {}')
+    networks_file = tmp_path / "networks.json"
+    networks_file.write_text('{"Access": {"vlan_id": "11"}}')
+
+    monkeypatch.setattr(settings, "terraform_render_source", "local")
+    monkeypatch.setattr(settings, "terraform_source_dir", str(source_dir))
+    monkeypatch.setattr(settings, "terraform_source_networks_file", "mist_networks.json")
+    monkeypatch.setattr(settings, "terraform_source_template_file", "mist.tf")
+    monkeypatch.setattr(settings, "terraform_networks_file", str(networks_file))
+    monkeypatch.setattr(settings, "github_repo", "ngnetworkpro/net-agent-harness")
+    monkeypatch.setattr(settings, "github_token", SecretStr("token"))
+    monkeypatch.setattr(adapter, "_find_repo_root", lambda: tmp_path)
+
+    render = await adapter.render(_build_change_request())
+    render.snippets[0].commands.append('{"name":"bad"}')
+
+    with pytest.raises(ValueError, match="Invalid command entry keys"):
+        await adapter.apply(render)
+
+
+@pytest.mark.asyncio
+async def test_render_rejects_local_source_path_escape(tmp_path, monkeypatch):
+    source_dir = tmp_path / "tf-source"
+    source_dir.mkdir()
+    (source_dir / "mist.tf").write_text('resource "mist_org_networktemplate" "offices" {}')
+
+    monkeypatch.setattr(settings, "terraform_render_source", "local")
+    monkeypatch.setattr(settings, "terraform_source_dir", str(source_dir))
+    monkeypatch.setattr(settings, "terraform_source_networks_file", "../escape.json")
+    monkeypatch.setattr(settings, "terraform_source_template_file", "mist.tf")
+
+    with pytest.raises(ValueError, match="resolves outside allowed base directory"):
+        await TerraformBackendAdapter().render(_build_change_request())

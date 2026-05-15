@@ -81,22 +81,6 @@ def planner_system_prompt(ctx: RunContext[RunContextData]) -> str:
         "- Do not assume a VLAN exists unless inventory context confirms it. ",
         "- Do not assume all VLANs are allowed on a trunk unless inventory context confirms allowed_vlans_mode=\"all\". ",
         "- include only fields necessary to express the desired end state ",
-        "assumptions: ",
-        "- list assumptions explicitly ",
-        "missing_information: ",
-        "- list of missing details that prevent safe planning ",
-        "safety_notes: ",
-        "- list of risks or review points ",
-        "reasoning: ",
-        "- short explanation of how the request was interpreted from the glossary and examples ",
-        "Normalization rules: ",
-        "- Use vendor-neutral terms such as access_vlan, native_vlan, allowed_vlans_mode, vlan_ids, svi, ip_prefix, acl_entries. ",
-        "- If the request says \"put port in VLAN X\" and does not mention trunk, uplink, tagged, or allowed VLANs, interpret it as setting an access VLAN. ",
-        "- If the request says \"allow\", \"permit\", or \"tag\" VLAN X on a trunk or uplink, interpret it as updating trunk allowed VLAN membership. ",
-        "- If the request mentions \"native VLAN\", require or assume trunk context. ",
-        "- If the request mentions \"gateway IP\", \"routed VLAN interface\", or \"SVI\", interpret it as Layer 3 VLAN interface work. ",
-        "- Do not assume a VLAN exists unless inventory context confirms it. ",
-        "- Do not assume all VLANs are allowed on a trunk unless inventory context confirms allowed_vlans_mode=\"all\". ",    
         "User request: ",
         "{{ user_request }} "
     ]
@@ -163,4 +147,3 @@ async def get_site_targets(ctx: RunContext[RunContextData], site: str):
 @change_planner.tool
 async def get_device_target(ctx: RunContext[RunContextData], site: str | None, device_name: str):
     return resolve_device_target(ctx, site=site, device_name=device_name)
-

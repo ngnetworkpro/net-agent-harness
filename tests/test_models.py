@@ -1,12 +1,14 @@
+import pytest
+from pydantic import ValidationError
+
+from net_agent_harness.models.artifacts import Finding
 from net_agent_harness.models.changes import ChangeRequest, RequestedChange, RollbackPlan
 from net_agent_harness.models.common import ArtifactMeta, ScopeRef
 from net_agent_harness.models.enums import ChangeRisk, NetworkDomain
 
 
 def test_pydantic_bounds_validation():
-    from pydantic import ValidationError
     from net_agent_harness.models.changes import VlanSpec, PortSpec
-    import pytest
 
     # Test VLAN ID bounds (must be between 1 and 4094)
     with pytest.raises(ValidationError):
@@ -28,9 +30,7 @@ def test_pydantic_bounds_validation():
     assert valid_port.mode == "access"
 
 def test_strict_structural_validation():
-    from pydantic import ValidationError
     from net_agent_harness.models.changes import VlanDesiredState, VlanDesiredStateOperation, VlanAttributes
-    import pytest
 
     # Test forbid extra properties
     with pytest.raises(ValidationError):
@@ -66,3 +66,25 @@ def test_change_request_model():
         risk=ChangeRisk.LOW,
     )
     assert model.scope.site == "HQ"
+
+
+def test_requested_change_prefers_vlan_desired_state_model():
+    requested = RequestedChange(
+        summary="Update VLAN intent",
+        intent="Ensure VLAN 220 exists",
+        desired_state={
+            "operations": [
+                {
+                    "object_type": "vlan",
+                    "operation": "ensure_present",
+                    "attributes": {"vlan_id": 220, "name": "Engineering"},
+                }
+            ]
+        },
+    )
+    assert requested.desired_state.__class__.__name__ == "VlanDesiredState"
+
+
+def test_finding_severity_is_constrained():
+    with pytest.raises(ValidationError):
+        Finding(code="X", severity="urgent", message="bad")

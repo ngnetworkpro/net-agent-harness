@@ -1,7 +1,7 @@
 from pathlib import Path
 from ..models.artifacts import ConfigRender, ValidationReport, ExecutionResult
 from ..models.changes import ChangeRequest
-from ..models.enums import RenderBackendType
+from ..models.enums import PlanDecisionType, RenderBackendType
 from ..services.artifact_store import ArtifactStore
 from ..services.run_store import RunStore
 from ..tools.validation_tools import validate_config_render
@@ -19,6 +19,12 @@ class StageCoordinator:
     async def render(self, change_request: ChangeRequest) -> tuple[ConfigRender, Path]:
         if self.run_store:
             self.run_store.update_stage(change_request.meta.run_id, 'render', 'running')
+        if (
+            change_request.plan_decision is None
+            or change_request.plan_decision.decision != PlanDecisionType.APPLY
+        ):
+            decision = change_request.plan_decision.decision.value if change_request.plan_decision else "none"
+            raise ValueError(f"Render rejected: plan decision is '{decision}', expected 'apply'.")
 
         from .resolve_backend import resolve_render_backend
 

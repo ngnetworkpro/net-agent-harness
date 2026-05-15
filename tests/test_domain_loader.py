@@ -28,3 +28,12 @@ def test_load_vlan_domain_context():
 def test_load_generic_domain_context():
     with pytest.raises(DomainLoadError):
         load_domain_context(NetworkDomain.OTHER)
+
+
+def test_load_domain_context_returns_isolated_copy():
+    first = load_domain_context(NetworkDomain.VLAN)
+    original_len = len(first.terms)
+    first.terms.append(first.terms[0])
+
+    second = load_domain_context(NetworkDomain.VLAN)
+    assert len(second.terms) == original_len

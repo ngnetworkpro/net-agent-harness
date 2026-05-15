@@ -1,10 +1,16 @@
+from collections.abc import Callable
+from typing import Any
+
 from ..models.enums import NetworkDomain
 
 
 from pydantic import BaseModel
 from ..models.changes import VlanDesiredState
 
-def normalize_desired_state(domain: NetworkDomain, desired_state: dict | VlanDesiredState | BaseModel) -> dict:
+def normalize_desired_state(
+    domain: NetworkDomain,
+    desired_state: dict[str, Any] | VlanDesiredState | BaseModel,
+) -> dict[str, Any]:
     if hasattr(desired_state, "model_dump"):
         desired_state = desired_state.model_dump(exclude_unset=True)
 
@@ -14,7 +20,7 @@ def normalize_desired_state(domain: NetworkDomain, desired_state: dict | VlanDes
     return desired_state
 
 
-def _normalize_vlan_desired_state(state: dict) -> dict:
+def _normalize_vlan_desired_state(state: dict[str, Any]) -> dict[str, Any]:
     if "operations" in state and isinstance(state["operations"], list):
         # We assume it's already using the structured format
         return state
@@ -22,15 +28,15 @@ def _normalize_vlan_desired_state(state: dict) -> dict:
     operations = []
 
     if "vlans" in state and state["vlans"]:
-        first_vlan = state["vlans"][0]
-        operations.append({
-            "object_type": "vlan",
-            "operation": "ensure_present",
-            "attributes": {
-                "vlan_id": first_vlan.get("vlan_id"),
-                "name": first_vlan.get("name", ""),
-            },
-        })
+        for vlan in state["vlans"]:
+            operations.append({
+                "object_type": "vlan",
+                "operation": "ensure_present",
+                "attributes": {
+                    "vlan_id": vlan.get("vlan_id"),
+                    "name": vlan.get("name", ""),
+                },
+            })
 
     elif "vlan_id" in state:
         operations.append({
@@ -62,6 +68,6 @@ def _normalize_vlan_desired_state(state: dict) -> dict:
     return {"operations": operations} if operations else state
 
 
-_NORMALIZERS: dict[NetworkDomain, callable] = {
+_NORMALIZERS: dict[NetworkDomain, Callable[[dict[str, Any]], dict[str, Any]]] = {
     NetworkDomain.VLAN: _normalize_vlan_desired_state,
 }

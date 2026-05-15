@@ -3,6 +3,7 @@ import base64
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from textwrap import indent
+from typing import Any
 from uuid import uuid4
 
 import httpx
@@ -98,13 +99,18 @@ class TerraformBackendAdapter(BackendAdapter):
         if not settings.github_token:
             raise ValueError("NET_AGENT_GITHUB_TOKEN is not set")
 
-        networks_path = Path(settings.terraform_networks_file)
+        repo_root = self._find_repo_root()
+        networks_path = self._resolve_repo_bounded_path(
+            repo_root,
+            settings.terraform_networks_file,
+            setting_name="NET_AGENT_TERRAFORM_NETWORKS_FILE",
+        )
         current = json.loads(networks_path.read_text())
 
         # Parse additions from snippet commands
         for snippet in config_render.snippets:
             for cmd in snippet.commands:
-                entry = json.loads(cmd)
+                entry = self._parse_vlan_command_entry(cmd, snippet.device_name)
                 current[entry["name"]] = {"vlan_id": entry["vlan_id"]}
 
         updated_content = json.dumps(current, indent=2) + "\n"
@@ -207,8 +213,17 @@ class TerraformBackendAdapter(BackendAdapter):
         if not source_dir.is_absolute():
             repo_root = self._find_repo_root()
             source_dir = repo_root / source_dir
-        networks_path = source_dir / settings.terraform_source_networks_file
-        template_path = source_dir / settings.terraform_source_template_file
+        source_dir = source_dir.resolve()
+        networks_path = self._resolve_repo_bounded_path(
+            source_dir,
+            settings.terraform_source_networks_file,
+            setting_name="NET_AGENT_TERRAFORM_SOURCE_NETWORKS_FILE",
+        )
+        template_path = self._resolve_repo_bounded_path(
+            source_dir,
+            settings.terraform_source_template_file,
+            setting_name="NET_AGENT_TERRAFORM_SOURCE_TEMPLATE_FILE",
+        )
 
         if not networks_path.exists():
             raise FileNotFoundError(f"Local Terraform source file not found: {networks_path}")
@@ -356,3 +371,35 @@ class TerraformBackendAdapter(BackendAdapter):
             created_at=datetime.now(timezone.utc),
             created_by="terraform-backend",
         )
+
+    @staticmethod
+    def _parse_vlan_command_entry(cmd: str, device_name: str) -> dict[str, str]:
+        try:
+            entry: Any = json.loads(cmd)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"Malformed command entry for device '{device_name}': {cmd!r}"
+            ) from exc
+        if not isinstance(entry, dict):
+            raise ValueError(
+                f"Invalid command entry for device '{device_name}': expected object JSON, got {type(entry).__name__}."
+            )
+        if set(entry.keys()) != {"name", "vlan_id"}:
+            raise ValueError(
+                f"Invalid command entry keys for device '{device_name}': {sorted(entry.keys())}."
+            )
+        if not isinstance(entry["name"], str) or not entry["name"].strip():
+            raise ValueError(f"Invalid VLAN command name for device '{device_name}'.")
+        if not isinstance(entry["vlan_id"], str) or not entry["vlan_id"].strip():
+            raise ValueError(f"Invalid VLAN command vlan_id for device '{device_name}'.")
+        return {"name": entry["name"], "vlan_id": entry["vlan_id"]}
+
+    @staticmethod
+    def _resolve_repo_bounded_path(base_dir: Path, configured_path: str, setting_name: str) -> Path:
+        candidate = Path(configured_path)
+        resolved = (base_dir / candidate).resolve() if not candidate.is_absolute() else candidate.resolve()
+        if not resolved.is_relative_to(base_dir.resolve()):
+            raise ValueError(
+                f"{setting_name} resolves outside allowed base directory '{base_dir}': {resolved}"
+            )
+        return resolved
