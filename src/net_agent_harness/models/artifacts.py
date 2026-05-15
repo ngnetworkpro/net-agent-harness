@@ -102,11 +102,21 @@ class Finding(BaseModel):
     recommendation: str | None = None
 
 
+class ValidationCheckResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    check_name: str
+    backend_type: RenderBackendType | None = None
+    status: ValidationStatus
+    details: str | None = None
+    blocking: bool = False
+
+
 class ValidationReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
     meta: ArtifactMeta
     overall_status: ValidationStatus
     checks_run: list[str] = Field(default_factory=list)
+    check_results: list[ValidationCheckResult] = Field(default_factory=list)
     findings: list[Finding] = Field(default_factory=list)
     approved_for_execution: bool = False
 
