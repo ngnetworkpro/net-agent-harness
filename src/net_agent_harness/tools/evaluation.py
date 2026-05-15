@@ -53,19 +53,55 @@ def _load_device_from_inventory(
     return DeviceInfo(**device_dict)
 
 
+def normalize_vlan_diff(vlans: list[VlanSpec]) -> list[VlanSpec]:
+    """Deduplicate VlanSpec entries by VLAN ID.
+
+    When multiple entries share the same VLAN ID:
+    - prefer the entry with a non-empty name
+    - discard empty-name duplicates
+    - if all entries for a given ID have empty names, keep exactly one
+
+    Returns a deterministic list ordered by VLAN ID.
+    """
+    best: dict[int, VlanSpec] = {}
+    for v in vlans:
+        existing = best.get(v.id)
+        if existing is None:
+            best[v.id] = v
+        elif not existing.name and v.name:
+            # Replace empty-name entry with one that has a real name
+            best[v.id] = v
+        # else: keep existing (already has a name, or both are empty)
+    return sorted(best.values(), key=lambda v: v.id)
+
+
 def _merge_device_changes(all_changes: list[DeviceChange]) -> list[DeviceChange]:
     if not all_changes:
         return []
     if len(all_changes) == 1:
-        return all_changes
+        # Even a single DeviceChange may contain duplicates from
+        # separate compute_vlan_diff calls, so normalize it.
+        normalized_vlans = normalize_vlan_diff(all_changes[0].changes.vlans_to_create)
+        if normalized_vlans == all_changes[0].changes.vlans_to_create:
+            return all_changes
+        return [DeviceChange(
+            device=all_changes[0].device,
+            domain=all_changes[0].domain,
+            changes=VlanChange(
+                vlans_to_create=normalized_vlans,
+                ports_to_update=all_changes[0].changes.ports_to_update,
+            ),
+        )]
 
-    merged_vlans: list[VlanSpec] = []
+    raw_vlans: list[VlanSpec] = []
     merged_ports: list[PortSpec] = []
     device_name = all_changes[0].device
 
     for dc in all_changes:
-        merged_vlans.extend(dc.changes.vlans_to_create)
+        raw_vlans.extend(dc.changes.vlans_to_create)
         merged_ports.extend(dc.changes.ports_to_update)
+
+    merged_vlans = normalize_vlan_diff(raw_vlans)
 
     return [DeviceChange(
         device=device_name,
