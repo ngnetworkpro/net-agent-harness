@@ -25,8 +25,7 @@ class TestJuniperCliStrategy:
             vlan_additions={"Engineering": "220"},
             port_changes=[],
         )
-        assert "vlan 220" in cmds
-        assert "name Engineering" in cmds
+        assert "set vlans Engineering vlan-id 220" in cmds
 
     def test_access_port(self):
         strategy = JuniperCliStrategy()
@@ -35,7 +34,7 @@ class TestJuniperCliStrategy:
             port_changes=[PortSpec(interface="ge-0/0/1", vlan_id=220, mode="access")],
         )
         assert any("vlan members 220" in c for c in cmds)
-        assert any("port-mode access" in c for c in cmds)
+        assert any("interface-mode access" in c for c in cmds)
 
     def test_trunk_port(self):
         strategy = JuniperCliStrategy()
@@ -43,7 +42,7 @@ class TestJuniperCliStrategy:
             vlan_additions={},
             port_changes=[PortSpec(interface="ge-0/0/2", vlan_id=100, mode="trunk")],
         )
-        assert any("port-mode trunk" in c for c in cmds)
+        assert any("interface-mode trunk" in c for c in cmds)
         assert any("vlan members all" in c for c in cmds)
 
     def test_combined_vlan_and_port(self):
@@ -52,8 +51,7 @@ class TestJuniperCliStrategy:
             vlan_additions={"Voice": "221"},
             port_changes=[PortSpec(interface="ge-0/0/5", vlan_id=221, mode="access")],
         )
-        assert "vlan 221" in cmds
-        assert "name Voice" in cmds
+        assert "set vlans Voice vlan-id 221" in cmds
         assert any("vlan members 221" in c for c in cmds)
 
 
@@ -273,8 +271,7 @@ class TestBuildCliFallbackSnippet:
             port_changes=[],
         )
         assert "CLI fallback for sw1" in snippet.rendered_text
-        assert "vlan 21" in snippet.rendered_text
-        assert "name printers" in snippet.rendered_text
+        assert "set vlans printers vlan-id 21" in snippet.rendered_text
 
     def test_meraki_snippet_uses_api_banner(self):
         snippet = build_cli_fallback_snippet(

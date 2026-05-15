@@ -89,14 +89,12 @@ async def test_render_uses_local_source_by_default(tmp_path, monkeypatch):
 
     # CLI fallback for sw1 must contain real VLAN + interface commands
     sw1_fb = [s for s in fallback if s.device_name == "sw1"][0]
-    assert "vlan 220" in sw1_fb.rendered_text
-    assert "name Engineering" in sw1_fb.rendered_text
+    assert "set vlans Engineering vlan-id 220" in sw1_fb.rendered_text
     assert "set interfaces ge-0/0/1 unit 0 family ethernet-switching vlan members 220" in sw1_fb.rendered_text
 
     # CLI fallback for sw2 (no ports, only VLAN)
     sw2_fb = [s for s in fallback if s.device_name == "sw2"][0]
-    assert "vlan 221" in sw2_fb.rendered_text
-    assert "name Voice" in sw2_fb.rendered_text
+    assert "set vlans Voice vlan-id 221" in sw2_fb.rendered_text
 
 
 @pytest.mark.asyncio

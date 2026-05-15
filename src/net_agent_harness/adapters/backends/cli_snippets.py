@@ -56,8 +56,7 @@ class JuniperCliStrategy(VendorCliStrategy):
         commands: list[str] = []
 
         for vlan_name, vlan_id in vlan_additions.items():
-            commands.append(f"vlan {vlan_id}")
-            commands.append(f"name {vlan_name}")
+            commands.append(f"set vlans {vlan_name} vlan-id {vlan_id}")
 
         for port in port_changes:
             iface = port.interface
@@ -69,12 +68,12 @@ class JuniperCliStrategy(VendorCliStrategy):
                 )
                 commands.append(
                     f"set interfaces {iface} unit 0 family ethernet-switching "
-                    f"port-mode access"
+                    f"interface-mode access"
                 )
             elif mode == "trunk":
                 commands.append(
                     f"set interfaces {iface} unit 0 family ethernet-switching "
-                    f"port-mode trunk"
+                    f"interface-mode trunk"
                 )
                 commands.append(
                     f"set interfaces {iface} unit 0 family ethernet-switching "

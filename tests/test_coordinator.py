@@ -129,7 +129,7 @@ async def test_stage_coordinator_terraform_skips_llm(tmp_path, monkeypatch):
     ]
     assert len(fallback_snippets) == 1
     assert fallback_snippets[0].backend_type == RenderBackendType.CLI
-    assert "vlan 220" in fallback_snippets[0].rendered_text
+    assert "set vlans Engineering vlan-id 220" in fallback_snippets[0].rendered_text
     assert "set interfaces ge-0/0/1" in fallback_snippets[0].rendered_text
 
 
