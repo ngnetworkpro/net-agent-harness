@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from typing import Any
 
 from ..models.enums import NetworkDomain
 
@@ -6,7 +7,10 @@ from ..models.enums import NetworkDomain
 from pydantic import BaseModel
 from ..models.changes import VlanDesiredState
 
-def normalize_desired_state(domain: NetworkDomain, desired_state: dict | VlanDesiredState | BaseModel) -> dict:
+def normalize_desired_state(
+    domain: NetworkDomain,
+    desired_state: dict[str, Any] | VlanDesiredState | BaseModel,
+) -> dict[str, Any]:
     if hasattr(desired_state, "model_dump"):
         desired_state = desired_state.model_dump(exclude_unset=True)
 
@@ -16,7 +20,7 @@ def normalize_desired_state(domain: NetworkDomain, desired_state: dict | VlanDes
     return desired_state
 
 
-def _normalize_vlan_desired_state(state: dict) -> dict:
+def _normalize_vlan_desired_state(state: dict[str, Any]) -> dict[str, Any]:
     if "operations" in state and isinstance(state["operations"], list):
         # We assume it's already using the structured format
         return state
@@ -64,6 +68,6 @@ def _normalize_vlan_desired_state(state: dict) -> dict:
     return {"operations": operations} if operations else state
 
 
-_NORMALIZERS: dict[NetworkDomain, Callable[[dict], dict]] = {
+_NORMALIZERS: dict[NetworkDomain, Callable[[dict[str, Any]], dict[str, Any]]] = {
     NetworkDomain.VLAN: _normalize_vlan_desired_state,
 }

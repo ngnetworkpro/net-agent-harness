@@ -1,5 +1,4 @@
 from collections.abc import Callable
-from collections import OrderedDict
 from ..models.changes import DeviceChange, PlanDecision, VlanChange, VlanSpec, PortSpec
 from ..models.enums import NetworkDomain, PlanDecisionType
 from ..tools.vlan_state import compute_vlan_diff, vlan_exists
@@ -75,13 +74,13 @@ def _merge_device_changes(all_changes: list[DeviceChange]) -> list[DeviceChange]
         merged_ports.extend(dc.changes.ports_to_update)
 
     def _dedupe_vlans(vlans: list[VlanSpec]) -> list[VlanSpec]:
-        deduped = OrderedDict()
+        deduped: dict[int, VlanSpec] = {}
         for vlan in vlans:
             deduped[vlan.id] = vlan
         return list(deduped.values())
 
     def _dedupe_ports(ports: list[PortSpec]) -> list[PortSpec]:
-        deduped = OrderedDict()
+        deduped: dict[tuple[str, int, str], PortSpec] = {}
         for port in ports:
             deduped[(port.interface, port.vlan_id, port.mode)] = port
         return list(deduped.values())
