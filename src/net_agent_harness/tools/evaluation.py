@@ -95,12 +95,6 @@ def _merge_device_changes(all_changes: list[DeviceChange]) -> list[DeviceChange]
         merged_vlans_to_remove.extend(dc.changes.vlans_to_remove)
         merged_ports.extend(dc.changes.ports_to_update)
 
-    def _dedupe_vlans(vlans: list[VlanSpec]) -> list[VlanSpec]:
-        deduped: dict[int, VlanSpec] = {}
-        for vlan in vlans:
-            deduped[vlan.id] = vlan
-        return list(deduped.values())
-
     def _dedupe_ports(ports: list[PortSpec]) -> list[PortSpec]:
         deduped: dict[tuple[str, int, str], PortSpec] = {}
         for port in ports:
@@ -111,8 +105,8 @@ def _merge_device_changes(all_changes: list[DeviceChange]) -> list[DeviceChange]
         device=device_name,
         domain=NetworkDomain.VLAN,
         changes=VlanChange(
-            vlans_to_create=_dedupe_vlans(merged_vlans),
-            vlans_to_remove=_dedupe_vlans(merged_vlans_to_remove),
+            vlans_to_create=normalize_vlan_diff(merged_vlans),
+            vlans_to_remove=normalize_vlan_diff(merged_vlans_to_remove),
             ports_to_update=_dedupe_ports(merged_ports),
         ),
     )]

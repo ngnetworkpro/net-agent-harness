@@ -9,10 +9,11 @@ from uuid import uuid4
 import httpx
 
 from net_agent_harness.adapters.backends.base import BackendAdapter
+from net_agent_harness.adapters.backends.cli_snippets import build_cli_fallback_snippet
 from net_agent_harness.config import settings
 from net_agent_harness.models.artifacts import ArtifactMeta, ConfigRender, ConfigSnippet, ExecutionResult
 from net_agent_harness.models.changes import ChangeRequest
-from net_agent_harness.models.enums import RenderBackendType, RenderRole
+from net_agent_harness.models.enums import DeviceVendor, RenderBackendType, RenderRole
 
 
 class TerraformBackendAdapter(BackendAdapter):
@@ -42,12 +43,19 @@ class TerraformBackendAdapter(BackendAdapter):
 
         snippets: list[ConfigSnippet] = []
 
-        # Build a lookup of port changes per device from the plan diff
+        # Build lookup maps from plan diff and resolved targets
         ports_by_device: dict[str, list] = {}
         if change_request.plan_decision:
             for device_change in change_request.plan_decision.diff:
                 if device_change.changes.ports_to_update:
                     ports_by_device[device_change.device] = device_change.changes.ports_to_update
+
+        vendor_by_device: dict[str, DeviceVendor] = {}
+        platform_by_device: dict[str, str | None] = {}
+        for target in change_request.resolved_targets:
+            if target.vendor:
+                vendor_by_device[target.name] = target.vendor
+            platform_by_device[target.name] = target.platform
 
         for device_name, additions in additions_by_device.items():
             if not additions:
@@ -77,11 +85,15 @@ class TerraformBackendAdapter(BackendAdapter):
                 )
             )
 
-            # Generate a CLI fallback with real commands from the plan diff
-            cli_fallback = self._build_cli_fallback_snippet(
+            # Generate a vendor-aware CLI fallback from the plan diff
+            device_vendor = vendor_by_device.get(device_name, DeviceVendor.OTHER)
+            device_platform = platform_by_device.get(device_name)
+            cli_fallback = build_cli_fallback_snippet(
                 device_name=device_name,
+                vendor=device_vendor,
                 vlan_additions=additions,
                 port_changes=ports_by_device.get(device_name, []),
+                platform=device_platform,
             )
             snippets.append(cli_fallback)
 
@@ -320,48 +332,6 @@ class TerraformBackendAdapter(BackendAdapter):
                 return parent
         raise RuntimeError("Unable to resolve repository root from terraform backend path")
 
-    def _build_cli_fallback_snippet(
-        self,
-        *,
-        device_name: str,
-        vlan_additions: dict[str, str],
-        port_changes: list,
-    ) -> ConfigSnippet:
-        """Generate a CLI fallback snippet with real commands from the plan diff."""
-        cli_commands: list[str] = []
-
-        # VLAN creation commands
-        for vlan_name, vlan_id in vlan_additions.items():
-            cli_commands.append(f"vlan {vlan_id}")
-            cli_commands.append(f"name {vlan_name}")
-
-        # Interface assignment commands
-        for port in port_changes:
-            iface = port.interface
-            mode = port.mode if hasattr(port.mode, 'value') else port.mode
-            if mode == "access":
-                cli_commands.append(
-                    f"set interfaces {iface} unit 0 family ethernet-switching vlan members {port.vlan_id}"
-                )
-                cli_commands.append(
-                    f"set interfaces {iface} unit 0 family ethernet-switching port-mode access"
-                )
-            elif mode == "trunk":
-                cli_commands.append(
-                    f"set interfaces {iface} unit 0 family ethernet-switching port-mode trunk"
-                )
-                cli_commands.append(
-                    f"set interfaces {iface} unit 0 family ethernet-switching vlan members all"
-                )
-
-        rendered_lines = [f"! CLI fallback for {device_name}"] + cli_commands
-        return ConfigSnippet(
-            device_name=device_name,
-            backend_type=RenderBackendType.CLI,
-            render_role=RenderRole.FALLBACK,
-            commands=cli_commands,
-            rendered_text="\n".join(rendered_lines),
-        )
 
     def _make_meta(self, change_request: ChangeRequest) -> ArtifactMeta:
         return ArtifactMeta(

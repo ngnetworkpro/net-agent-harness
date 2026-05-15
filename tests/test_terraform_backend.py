@@ -17,7 +17,7 @@ from net_agent_harness.models.changes import (
     VlanSpec,
 )
 from net_agent_harness.models.common import ArtifactMeta, ScopeRef
-from net_agent_harness.models.enums import ChangeRisk, NetworkDomain, PlanDecisionType, RenderRole, TargetScope
+from net_agent_harness.models.enums import ChangeRisk, DeviceVendor, NetworkDomain, PlanDecisionType, RenderRole, TargetScope
 
 
 def _build_change_request() -> ChangeRequest:
@@ -27,8 +27,8 @@ def _build_change_request() -> ChangeRequest:
         scope=ScopeRef(device_names=["sw1", "sw2"]),
         target_scope=TargetScope.device,
         resolved_targets=[
-            ResolvedTarget(name="sw1", platform="mist"),
-            ResolvedTarget(name="sw2", platform="mist"),
+            ResolvedTarget(name="sw1", platform="mist", vendor=DeviceVendor.JUNIPER),
+            ResolvedTarget(name="sw2", platform="mist", vendor=DeviceVendor.JUNIPER),
         ],
         requested_change=RequestedChange(summary="test", intent="test"),
         risk=ChangeRisk.LOW,

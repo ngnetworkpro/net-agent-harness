@@ -65,6 +65,7 @@ async def test_stage_coordinator_terraform_skips_llm(tmp_path, monkeypatch):
     from net_agent_harness.models.changes import (
         DeviceChange, VlanChange, VlanSpec, PortSpec, ResolvedTarget,
     )
+    from net_agent_harness.models.enums import DeviceVendor
 
     monkeypatch.setattr(settings, "execution_backend", "terraform")
     monkeypatch.setattr(settings, "terraform_render_source", "local")
@@ -90,7 +91,7 @@ async def test_stage_coordinator_terraform_skips_llm(tmp_path, monkeypatch):
             intent="Add VLAN 220 to access switch sw1 at HQ",
         ),
         target_scope="device",
-        resolved_targets=[ResolvedTarget(name="sw1", platform="mist")],
+        resolved_targets=[ResolvedTarget(name="sw1", platform="mist", vendor=DeviceVendor.JUNIPER)],
         rollback_plan=RollbackPlan(summary="Revert"),
         risk=ChangeRisk.LOW,
         plan_decision=PlanDecision(

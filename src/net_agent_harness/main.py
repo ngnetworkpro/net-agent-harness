@@ -168,7 +168,7 @@ async def _async_plan(request: str, operator: str = "local-user"):
         )
     
     reporter.update(run_stage.value, "running", " 🔍 Evaluating intent state...")
-    if resolved_targets:
+    if resolved_targets and planned.plan_decision.decision.value != "blocked":
         normalized_desired_state = normalize_desired_state(
             route.domain,
             planned.requested_change.desired_state,
@@ -181,7 +181,7 @@ async def _async_plan(request: str, operator: str = "local-user"):
             desired_state=normalized_desired_state,
             inventory_source=settings.inventory_source,
         )
-    planned.plan_decision = plan_decision
+        planned.plan_decision = plan_decision
     reporter.update(run_stage.value, "running", "💾 Persisting change request artifact...")
 
     artifact = ChangeRequest(
