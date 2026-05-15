@@ -1,10 +1,24 @@
-from ..models.artifacts import ConfigRender, ConfigSnippet, Finding, ValidationReport, RenderAcceptanceResult
+import os
+import re
+import json
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+import yaml
+
+from ..models.artifacts import (
+    ConfigRender,
+    ConfigSnippet,
+    Finding,
+    RenderAcceptanceResult,
+    ValidationCheckResult,
+    ValidationReport,
+)
 from ..models.changes import ChangeRequest
 from ..models.common import ArtifactMeta
 from ..models.enums import ValidationStatus, PlanDecisionType, RenderBackendType, RenderRole
-import json
-import re
-import yaml
 
 
 REQUIRED_SAFETY_MARKERS = ["! Candidate config"]
@@ -34,16 +48,14 @@ def validate_config_render(
     change_request: ChangeRequest | None = None,
 ) -> ValidationReport:
     findings: list[Finding] = []
-    checks_run = [
-        "candidate header present",
-        "non-empty snippet list",
-        "warnings reviewed",
-    ]
+    check_results: list[ValidationCheckResult] = []
 
-    checks_run.extend(_validate_snippets(config_render, findings))
+    check_results.extend(_validate_snippets(config_render, findings))
 
     if change_request is not None:
-        checks_run.extend(_validate_against_change_request(config_render, change_request, findings))
+        check_results.extend(_validate_against_change_request(config_render, change_request, findings))
+
+    check_results.extend(_validate_backend_dry_run(config_render, findings))
 
     if config_render.warnings:
         findings.append(Finding(
@@ -52,6 +64,23 @@ def validate_config_render(
             message="Render completed with warnings.",
             recommendation="Review warnings and confirm assumptions are acceptable.",
         ))
+        check_results.append(
+            ValidationCheckResult(
+                check_name="warnings_review_check",
+                status=ValidationStatus.WARN,
+                details="Render warnings are present and must be reviewed.",
+                blocking=False,
+            )
+        )
+    else:
+        check_results.append(
+            ValidationCheckResult(
+                check_name="warnings_review_check",
+                status=ValidationStatus.PASS,
+                details="No render warnings were produced.",
+                blocking=False,
+            )
+        )
 
     status = ValidationStatus.PASS
     approved_for_execution = True
@@ -70,12 +99,18 @@ def validate_config_render(
             created_by="validate_config_render",
         ),
         overall_status=status,
-        checks_run=checks_run,
+        checks_run=[check.check_name for check in check_results],
+        check_results=check_results,
         findings=findings,
         approved_for_execution=approved_for_execution,
     )
-def _validate_snippets(config_render: ConfigRender, findings: list[Finding]) -> list[str]:
-    checks = ["non-empty snippet list", "candidate header present"]
+
+
+def _validate_snippets(
+    config_render: ConfigRender,
+    findings: list[Finding],
+) -> list[ValidationCheckResult]:
+    checks: list[ValidationCheckResult] = []
 
     if not config_render.snippets:
         findings.append(Finding(
@@ -84,7 +119,23 @@ def _validate_snippets(config_render: ConfigRender, findings: list[Finding]) -> 
             message="No config snippets were produced.",
             recommendation="Review the source change request and rendering logic.",
         ))
+        checks.append(
+            ValidationCheckResult(
+                check_name="artifact_consistency_check",
+                status=ValidationStatus.FAIL,
+                details="No snippets were produced.",
+                blocking=True,
+            )
+        )
         return checks
+
+    has_header_issue = False
+    has_label_issue = False
+    has_platform_issue = False
+    any_labeled_snippet = any(
+        snippet.backend_type is not None or snippet.render_role is not None
+        for snippet in config_render.snippets
+    )
 
     for snippet in config_render.snippets:
         text = snippet.rendered_text or "\n".join(snippet.commands)
@@ -96,6 +147,7 @@ def _validate_snippets(config_render: ConfigRender, findings: list[Finding]) -> 
                 device_name=snippet.device_name,
                 recommendation="Ensure the render step creates candidate commands.",
             ))
+            has_platform_issue = True
         elif (
             snippet.render_role == RenderRole.PRIMARY
             and (snippet.backend_type in {None, RenderBackendType.CLI})
@@ -108,6 +160,62 @@ def _validate_snippets(config_render: ConfigRender, findings: list[Finding]) -> 
                 device_name=snippet.device_name,
                 recommendation="Add a clear non-executed candidate marker to the rendered output.",
             ))
+            has_header_issue = True
+
+        if any_labeled_snippet and snippet.backend_type is None:
+            findings.append(Finding(
+                code="MISSING_BACKEND_TYPE",
+                severity="high",
+                message=f"Snippet for {snippet.device_name} is missing backend_type.",
+                device_name=snippet.device_name,
+                recommendation="Ensure each render snippet is labeled with backend_type.",
+            ))
+            has_label_issue = True
+
+        if any_labeled_snippet and snippet.render_role is None:
+            findings.append(Finding(
+                code="MISSING_RENDER_ROLE",
+                severity="high",
+                message=f"Snippet for {snippet.device_name} is missing render_role.",
+                device_name=snippet.device_name,
+                recommendation="Ensure each render snippet is labeled as primary or fallback.",
+            ))
+            has_label_issue = True
+
+    checks.append(
+        ValidationCheckResult(
+            check_name="artifact_consistency_check",
+            status=ValidationStatus.PASS if not has_platform_issue else ValidationStatus.FAIL,
+            details="Rendered snippets contain non-empty candidate content."
+            if not has_platform_issue
+            else "One or more snippets are empty.",
+            blocking=has_platform_issue,
+        )
+    )
+    checks.append(
+        ValidationCheckResult(
+            check_name="candidate_header_check",
+            status=ValidationStatus.PASS if not has_header_issue else ValidationStatus.WARN,
+            details="Primary CLI snippets include candidate header markers."
+            if not has_header_issue
+            else "One or more primary CLI snippets are missing candidate header markers.",
+            blocking=False,
+        )
+    )
+    checks.append(
+        ValidationCheckResult(
+            check_name="backend_role_label_check",
+            status=ValidationStatus.PASS if not has_label_issue else ValidationStatus.FAIL,
+            details=(
+                "All snippets include backend_type and render_role labels."
+                if not has_label_issue and any_labeled_snippet
+                else "Snippets are unlabeled; backend-specific checks run only when labels are present."
+                if not has_label_issue
+                else "One or more snippets are missing backend_type or render_role labels."
+            ),
+            blocking=has_label_issue,
+        )
+    )
 
     return checks
 
@@ -116,10 +224,13 @@ def _validate_against_change_request(
     config_render: ConfigRender,
     change_request: ChangeRequest,
     findings: list[Finding],
-) -> list[str]:
-    checks: list[str] = []
+) -> list[ValidationCheckResult]:
+    checks: list[ValidationCheckResult] = []
     run_id = change_request.meta.run_id
     plan_decision = change_request.plan_decision
+
+    has_consistency_issue = False
+    has_platform_constraint_issue = False
 
     if config_render.meta.run_id != run_id:
         findings.append(Finding(
@@ -128,6 +239,7 @@ def _validate_against_change_request(
             message=f"ConfigRender run_id '{config_render.meta.run_id}' does not match ChangeRequest run_id '{run_id}'.",
             recommendation="Ensure the render artifact run_id matches the source ChangeRequest.",
         ))
+        has_consistency_issue = True
 
     if change_request.resolved_targets:
         resolved_device_names = {t.name for t in change_request.resolved_targets}
@@ -140,6 +252,7 @@ def _validate_against_change_request(
                     device_name=snippet.device_name,
                     recommendation="Only render configuration for devices in the resolved target set.",
                 ))
+                has_consistency_issue = True
 
     if plan_decision and plan_decision.decision == PlanDecisionType.APPLY:
         expected_vlan_ids = set()
@@ -164,6 +277,7 @@ def _validate_against_change_request(
                 message=f"Rendered devices {extra_devices} are not in the approved plan diff.",
                 recommendation="Do not render configuration for devices outside the approved plan.",
             ))
+            has_consistency_issue = True
 
         rendered_vlan_ids = _extract_rendered_vlan_ids(config_render.snippets)
         missing_vlan_ids = expected_vlan_ids - rendered_vlan_ids
@@ -174,6 +288,7 @@ def _validate_against_change_request(
                 message=f"VLAN IDs {missing_vlan_ids} from the plan are missing in rendered output.",
                 recommendation="Ensure all planned VLANs are included in the rendered configuration.",
             ))
+            has_platform_constraint_issue = True
 
         if not config_render.snippets:
             findings.append(Finding(
@@ -182,8 +297,232 @@ def _validate_against_change_request(
                 message="Plan decision is 'apply' but no snippets were produced.",
                 recommendation="Ensure the render step produces configuration snippets for apply plans.",
             ))
+            has_consistency_issue = True
+
+    checks.append(
+        ValidationCheckResult(
+            check_name="artifact_consistency_check",
+            status=ValidationStatus.PASS if not has_consistency_issue else ValidationStatus.FAIL,
+            details="Render artifact is consistent with change request metadata and targets."
+            if not has_consistency_issue
+            else "Render artifact does not match run metadata or resolved targets.",
+            blocking=has_consistency_issue,
+        )
+    )
+    checks.append(
+        ValidationCheckResult(
+            check_name="platform_constraint_check",
+            status=ValidationStatus.PASS if not has_platform_constraint_issue else ValidationStatus.FAIL,
+            details="Rendered output satisfies expected platform and plan constraints."
+            if not has_platform_constraint_issue
+            else "Rendered output is missing plan-required platform data.",
+            blocking=has_platform_constraint_issue,
+        )
+    )
 
     return checks
+
+
+def _validate_backend_dry_run(
+    config_render: ConfigRender,
+    findings: list[Finding],
+) -> list[ValidationCheckResult]:
+    check_results: list[ValidationCheckResult] = []
+    terraform_primaries = [
+        snippet
+        for snippet in config_render.snippets
+        if snippet.backend_type == RenderBackendType.TERRAFORM
+        and snippet.render_role == RenderRole.PRIMARY
+    ]
+
+    if not terraform_primaries:
+        return check_results
+
+    malformed_messages: list[str] = []
+    for snippet in terraform_primaries:
+        rendered = (snippet.rendered_text or "").strip()
+        if not rendered:
+            malformed_messages.append(
+                f"Terraform primary snippet for {snippet.device_name} is missing rendered_text."
+            )
+            continue
+        text_lower = rendered.lower()
+        if not any(marker in text_lower for marker in TERRAFORM_MARKERS):
+            malformed_messages.append(
+                f"Terraform primary snippet for {snippet.device_name} is not Terraform-shaped."
+            )
+        if any(
+            re.search(pattern, rendered, re.IGNORECASE | re.MULTILINE)
+            for pattern in CLI_PRIMARY_PATTERNS
+        ):
+            malformed_messages.append(
+                f"Terraform primary snippet for {snippet.device_name} appears CLI-shaped."
+            )
+
+    if malformed_messages:
+        for message in malformed_messages:
+            findings.append(Finding(
+                code="MALFORMED_TERRAFORM_RENDER",
+                severity="high",
+                message=message,
+                recommendation="Ensure Terraform snippets contain valid Terraform configuration.",
+            ))
+        return [
+            ValidationCheckResult(
+                check_name="terraform_validate_check",
+                backend_type=RenderBackendType.TERRAFORM,
+                status=ValidationStatus.FAIL,
+                details="Terraform render artifact is malformed.",
+                blocking=True,
+            ),
+            ValidationCheckResult(
+                check_name="terraform_plan_check",
+                backend_type=RenderBackendType.TERRAFORM,
+                status=ValidationStatus.FAIL,
+                details="Terraform render artifact is malformed.",
+                blocking=True,
+            ),
+        ]
+
+    terraform_bin = shutil.which("terraform")
+    if terraform_bin is None:
+        findings.append(Finding(
+            code="TERRAFORM_BINARY_MISSING",
+            severity="high",
+            message="Terraform preflight checks require `terraform` to be installed.",
+            recommendation="Install Terraform in the validation environment.",
+        ))
+        return [
+            ValidationCheckResult(
+                check_name="terraform_validate_check",
+                backend_type=RenderBackendType.TERRAFORM,
+                status=ValidationStatus.FAIL,
+                details="Terraform executable was not found in PATH.",
+                blocking=True,
+            ),
+            ValidationCheckResult(
+                check_name="terraform_plan_check",
+                backend_type=RenderBackendType.TERRAFORM,
+                status=ValidationStatus.FAIL,
+                details="Terraform executable was not found in PATH.",
+                blocking=True,
+            ),
+        ]
+
+    env = os.environ.copy()
+    env["TF_IN_AUTOMATION"] = "1"
+    with tempfile.TemporaryDirectory(prefix="tf-validate-") as temp_dir:
+        workdir = Path(temp_dir)
+        for index, snippet in enumerate(terraform_primaries):
+            safe_device = re.sub(r"[^a-zA-Z0-9_-]+", "_", snippet.device_name)
+            target_path = workdir / f"{index:03d}_{safe_device}.tf"
+            target_path.write_text((snippet.rendered_text or "").strip() + "\n")
+
+        init_result = subprocess.run(
+            [terraform_bin, "init", "-backend=false", "-input=false", "-no-color"],
+            cwd=workdir,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+        if init_result.returncode != 0:
+            details = _truncate_command_output(init_result)
+            findings.append(Finding(
+                code="TERRAFORM_INIT_FAILED",
+                severity="high",
+                message="Terraform init failed during preflight validation.",
+                recommendation="Review Terraform source and provider configuration.",
+            ))
+            return [
+                ValidationCheckResult(
+                    check_name="terraform_validate_check",
+                    backend_type=RenderBackendType.TERRAFORM,
+                    status=ValidationStatus.FAIL,
+                    details=details,
+                    blocking=True,
+                ),
+                ValidationCheckResult(
+                    check_name="terraform_plan_check",
+                    backend_type=RenderBackendType.TERRAFORM,
+                    status=ValidationStatus.FAIL,
+                    details="Terraform init failed; plan preflight was not run.",
+                    blocking=True,
+                ),
+            ]
+
+        validate_result = subprocess.run(
+            [terraform_bin, "validate", "-no-color"],
+            cwd=workdir,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+        validate_ok = validate_result.returncode == 0
+        if not validate_ok:
+            findings.append(Finding(
+                code="TERRAFORM_VALIDATE_FAILED",
+                severity="high",
+                message="Terraform validate failed for rendered artifact.",
+                recommendation="Fix Terraform syntax/configuration errors before execution.",
+            ))
+
+        plan_status = ValidationStatus.FAIL
+        plan_details = "Terraform plan was skipped because validate failed."
+        if validate_ok:
+            plan_result = subprocess.run(
+                [
+                    terraform_bin,
+                    "plan",
+                    "-refresh=false",
+                    "-lock=false",
+                    "-input=false",
+                    "-detailed-exitcode",
+                    "-no-color",
+                ],
+                cwd=workdir,
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+            )
+            plan_ok = plan_result.returncode in {0, 2}
+            plan_status = ValidationStatus.PASS if plan_ok else ValidationStatus.FAIL
+            plan_details = _truncate_command_output(plan_result)
+            if not plan_ok:
+                findings.append(Finding(
+                    code="TERRAFORM_PLAN_FAILED",
+                    severity="high",
+                    message="Terraform plan failed for rendered artifact.",
+                    recommendation="Review provider constraints and required inputs.",
+                ))
+
+        return [
+            ValidationCheckResult(
+                check_name="terraform_validate_check",
+                backend_type=RenderBackendType.TERRAFORM,
+                status=ValidationStatus.PASS if validate_ok else ValidationStatus.FAIL,
+                details=_truncate_command_output(validate_result),
+                blocking=not validate_ok,
+            ),
+            ValidationCheckResult(
+                check_name="terraform_plan_check",
+                backend_type=RenderBackendType.TERRAFORM,
+                status=plan_status,
+                details=plan_details,
+                blocking=plan_status != ValidationStatus.PASS,
+            ),
+        ]
+
+
+def _truncate_command_output(result: subprocess.CompletedProcess[str], max_chars: int = 1000) -> str:
+    output = "\n".join(part for part in [result.stdout.strip(), result.stderr.strip()] if part)
+    if not output:
+        return f"Command exited with status {result.returncode}."
+    if len(output) <= max_chars:
+        return output
+    return output[: max_chars - 3] + "..."
 
 
 def _extract_rendered_vlan_ids(snippets: list[ConfigSnippet]) -> set[int]:
