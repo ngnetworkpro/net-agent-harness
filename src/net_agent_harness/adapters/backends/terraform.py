@@ -86,7 +86,7 @@ class TerraformBackendAdapter(BackendAdapter):
             )
 
             # Generate a vendor-aware CLI fallback from the plan diff
-            device_vendor = vendor_by_device.get(device_name, DeviceVendor.OTHER)
+            device_vendor = vendor_by_device.get(device_name)  # None when vendor is absent
             device_platform = platform_by_device.get(device_name)
             cli_fallback = build_cli_fallback_snippet(
                 device_name=device_name,

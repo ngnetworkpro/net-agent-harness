@@ -234,14 +234,51 @@ class TestUnsupportedVendors:
         with pytest.raises(NotImplementedError, match="Fortinet"):
             strategy.render_vlan_commands({}, [])
 
-    def test_other_vendor_raises(self):
-        with pytest.raises(NotImplementedError, match="other"):
-            build_cli_fallback_snippet(
-                device_name="unknown-box",
-                vendor=DeviceVendor.OTHER,
-                vlan_additions={"x": "1"},
-                port_changes=[],
-            )
+    def test_other_vendor_uses_generic_strategy(self):
+        snippet = build_cli_fallback_snippet(
+            device_name="unknown-box",
+            vendor=DeviceVendor.OTHER,
+            vlan_additions={"x": "1"},
+            port_changes=[],
+        )
+        assert snippet.backend_type == RenderBackendType.CLI
+        assert snippet.render_role == RenderRole.FALLBACK
+        assert "unknown-box" in snippet.rendered_text
+        assert "# CREATE VLAN 1 name x" in snippet.commands
+
+    def test_none_vendor_uses_generic_strategy(self):
+        snippet = build_cli_fallback_snippet(
+            device_name="mystery-box",
+            vendor=None,
+            vlan_additions={"mgmt": "99"},
+            port_changes=[],
+        )
+        assert snippet.backend_type == RenderBackendType.CLI
+        assert "mystery-box" in snippet.rendered_text
+        assert "# CREATE VLAN 99 name mgmt" in snippet.commands
+
+    def test_none_vendor_infers_from_mist_platform(self):
+        snippet = build_cli_fallback_snippet(
+            device_name="sw1",
+            vendor=None,
+            vlan_additions={"Engineering": "220"},
+            port_changes=[],
+            platform="mist",
+        )
+        # mist → JUNIPER strategy: expect JunOS-style "vlan <id>" command
+        assert "vlan 220" in snippet.commands
+        assert "name Engineering" in snippet.commands
+
+    def test_other_vendor_infers_from_ios_platform(self):
+        snippet = build_cli_fallback_snippet(
+            device_name="c2960",
+            vendor=DeviceVendor.OTHER,
+            vlan_additions={"Data": "10"},
+            port_changes=[],
+            platform="ios",
+        )
+        # ios → CISCO IOS strategy: expect IOS-style " name" command
+        assert " name Data" in snippet.commands
 
 
 # ---------------------------------------------------------------------------

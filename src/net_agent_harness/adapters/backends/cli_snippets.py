@@ -7,6 +7,7 @@ for a given vendor/platform combination.
 """
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 
 from net_agent_harness.models.artifacts import ConfigSnippet
 from net_agent_harness.models.changes import PortSpec
@@ -216,6 +217,35 @@ class FortinetCliStrategy(VendorCliStrategy):
         raise NotImplementedError("CLI rendering not yet supported for Fortinet")
 
 
+class GenericCliStrategy(VendorCliStrategy):
+    """Fallback strategy for unknown or unrecognized vendors.
+
+    Produces human-readable comment lines that identify the required changes
+    without vendor-specific syntax, so a human operator can act on them.
+    """
+
+    def render_vlan_commands(
+        self,
+        vlan_additions: dict[str, str],
+        port_changes: list[PortSpec],
+    ) -> list[str]:
+        commands: list[str] = []
+        for vlan_name, vlan_id in vlan_additions.items():
+            commands.append(f"# CREATE VLAN {vlan_id} name {vlan_name}")
+        for port in port_changes:
+            mode = port.mode.value if hasattr(port.mode, "value") else port.mode
+            commands.append(
+                f"# SET interface {port.interface} mode {mode} vlan {port.vlan_id}"
+            )
+        return commands
+
+    def render_comment_banner(self, device_name: str) -> str:
+        return (
+            f"# CLI fallback for {device_name} "
+            f"(vendor/platform unknown — commands require manual review)"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Registry and dispatch
 # ---------------------------------------------------------------------------
@@ -227,6 +257,7 @@ _VENDOR_REGISTRY: dict[DeviceVendor, type[VendorCliStrategy]] = {
     DeviceVendor.ARISTA: AristaCliStrategy,
     DeviceVendor.PALO_ALTO: PaloAltoCliStrategy,
     DeviceVendor.FORTINET: FortinetCliStrategy,
+    DeviceVendor.OTHER: GenericCliStrategy,
 }
 
 # Cisco platform disambiguation: map platform strings to strategy classes
@@ -237,31 +268,53 @@ _CISCO_PLATFORM_MAP: dict[str, type[VendorCliStrategy]] = {
     "nx-os": CiscoNxosCliStrategy,
 }
 
+# Platform-to-vendor inference: used when vendor is OTHER or absent
+_PLATFORM_VENDOR_MAP: dict[str, DeviceVendor] = {
+    "mist": DeviceVendor.JUNIPER,
+    "junos": DeviceVendor.JUNIPER,
+    "ios": DeviceVendor.CISCO,
+    "ios-xe": DeviceVendor.CISCO,
+    "ios-xr": DeviceVendor.CISCO,
+    "nxos": DeviceVendor.CISCO,
+    "nx-os": DeviceVendor.CISCO,
+    "eos": DeviceVendor.ARISTA,
+    "meraki": DeviceVendor.MERAKI,
+    "panos": DeviceVendor.PALO_ALTO,
+}
+
 
 def _resolve_strategy(
-    vendor: DeviceVendor,
+    vendor: DeviceVendor | None,
     platform: str | None = None,
 ) -> VendorCliStrategy:
-    """Look up the correct CLI strategy for a vendor/platform pair."""
-    if vendor == DeviceVendor.CISCO and platform:
+    """Look up the correct CLI strategy for a vendor/platform pair.
+
+    When ``vendor`` is ``None`` or ``OTHER``, the platform string is used to
+    infer the vendor before falling back to the generic strategy.
+    """
+    effective_vendor = vendor
+
+    # Infer vendor from platform when vendor is absent or unspecified
+    if (effective_vendor is None or effective_vendor == DeviceVendor.OTHER) and platform:
+        effective_vendor = _PLATFORM_VENDOR_MAP.get(platform.lower(), effective_vendor)
+
+    if effective_vendor == DeviceVendor.CISCO and platform:
         strategy_cls = _CISCO_PLATFORM_MAP.get(platform.lower())
         if strategy_cls:
             return strategy_cls()
 
-    strategy_cls = _VENDOR_REGISTRY.get(vendor)
+    strategy_cls = _VENDOR_REGISTRY.get(effective_vendor or DeviceVendor.OTHER)
     if strategy_cls is None:
-        raise NotImplementedError(
-            f"CLI rendering not yet supported for vendor '{vendor.value}'"
-        )
+        return GenericCliStrategy()
     return strategy_cls()
 
 
 def build_cli_fallback_snippet(
     *,
     device_name: str,
-    vendor: DeviceVendor,
+    vendor: DeviceVendor | None,
     vlan_additions: dict[str, str],
-    port_changes: list[PortSpec] = [],
+    port_changes: Sequence[PortSpec] = (),
     platform: str | None = None,
 ) -> ConfigSnippet:
     """Build a CLI fallback ConfigSnippet using the appropriate vendor strategy.
@@ -271,7 +324,9 @@ def build_cli_fallback_snippet(
     device_name:
         Target device hostname.
     vendor:
-        Device vendor enum value used to select the strategy.
+        Device vendor enum value used to select the strategy.  When ``None``
+        or ``DeviceVendor.OTHER``, the ``platform`` string is consulted for
+        vendor inference before falling back to the generic strategy.
     vlan_additions:
         Mapping of ``{vlan_name: vlan_id}`` for VLANs to create.
     port_changes:
@@ -281,7 +336,7 @@ def build_cli_fallback_snippet(
         (e.g., ``"nxos"`` vs ``"ios"`` for Cisco).
     """
     strategy = _resolve_strategy(vendor, platform)
-    cli_commands = strategy.render_vlan_commands(vlan_additions, port_changes)
+    cli_commands = strategy.render_vlan_commands(vlan_additions, list(port_changes))
     banner = strategy.render_comment_banner(device_name)
     rendered_lines = [banner] + cli_commands
 

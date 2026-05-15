@@ -154,3 +154,62 @@ async def test_stage_coordinator_rejects_render_without_apply(tmp_path):
 
     with pytest.raises(ValueError, match="Render rejected"):
         await coordinator.render(change_request)
+
+
+@pytest.mark.asyncio
+async def test_stage_coordinator_validates_platform_constraints_per_device(tmp_path, monkeypatch):
+    """Platform constraints are validated per device, not just from the first target."""
+    from net_agent_harness.config import settings
+    from net_agent_harness.models.changes import (
+        DeviceChange, VlanChange, VlanSpec, ResolvedTarget,
+    )
+    from net_agent_harness.models.enums import DeviceVendor
+
+    monkeypatch.setattr(settings, "execution_backend", "direct_api")
+
+    store = ArtifactStore(tmp_path)
+    coordinator = StageCoordinator(store)
+
+    change_request = ChangeRequest(
+        meta=ArtifactMeta(run_id="run-pc", artifact_id="cr-pc", created_by="test"),
+        domain=NetworkDomain.VLAN,
+        scope=ScopeRef(site="HQ", device_names=["sw1", "sw2"]),
+        requested_change=RequestedChange(
+            summary="Add unnamed VLAN",
+            requested_by="tester",
+            intent="Add VLAN 220 to sw1 and sw2",
+        ),
+        target_scope="device",
+        # sw1 is mist, sw2 is ios — constraints validated per device
+        resolved_targets=[
+            ResolvedTarget(name="sw1", platform="mist", vendor=DeviceVendor.JUNIPER),
+            ResolvedTarget(name="sw2", platform="ios", vendor=DeviceVendor.CISCO),
+        ],
+        rollback_plan=RollbackPlan(summary="Revert"),
+        risk=ChangeRisk.LOW,
+        plan_decision=PlanDecision(
+            decision=PlanDecisionType.APPLY,
+            reason="test",
+            diff=[
+                # sw1 is mist — VLAN with no name should trigger constraint error
+                DeviceChange(
+                    device="sw1",
+                    domain=NetworkDomain.VLAN,
+                    changes=VlanChange(
+                        vlans_to_create=[VlanSpec(id=220, name="")],
+                    ),
+                ),
+                # sw2 is ios — no mist constraints apply, so this is fine
+                DeviceChange(
+                    device="sw2",
+                    domain=NetworkDomain.VLAN,
+                    changes=VlanChange(
+                        vlans_to_create=[VlanSpec(id=221, name="")],
+                    ),
+                ),
+            ],
+        ),
+    )
+
+    with pytest.raises(ValueError, match="platform constraints failed"):
+        await coordinator.render(change_request)

@@ -28,16 +28,17 @@ class StageCoordinator:
 
         from .resolve_backend import resolve_render_backend
 
-        platform = None
-        if change_request.resolved_targets:
-            platform = change_request.resolved_targets[0].platform
-
-        if platform and change_request.plan_decision and change_request.plan_decision.diff:
+        if change_request.plan_decision and change_request.plan_decision.diff:
             from .platform_constraints import validate_platform_constraints
-            errors = validate_platform_constraints(platform, change_request.plan_decision.diff)
+            platform_by_device = {t.name: t.platform for t in change_request.resolved_targets}
+            errors: list[str] = []
+            for device_change in change_request.plan_decision.diff:
+                device_platform = platform_by_device.get(device_change.device)
+                errors.extend(validate_platform_constraints(device_platform, [device_change]))
             if errors:
                 raise ValueError(f"Cannot render config: platform constraints failed: {'; '.join(errors)}")
 
+        platform = change_request.resolved_targets[0].platform if change_request.resolved_targets else None
         primary_backend = resolve_render_backend(settings, platform)
 
         # Source-backed backends have their own deterministic render — skip the LLM

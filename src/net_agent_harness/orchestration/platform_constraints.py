@@ -1,5 +1,7 @@
 from collections.abc import Callable
+
 from ..models.changes import DeviceChange
+
 
 def _validate_mist_constraints(changes: list[DeviceChange]) -> list[str]:
     errors = []
@@ -12,20 +14,22 @@ def _validate_mist_constraints(changes: list[DeviceChange]) -> list[str]:
                     )
     return errors
 
+
 _PLATFORM_VALIDATORS: dict[str, Callable[[list[DeviceChange]], list[str]]] = {
     "mist": _validate_mist_constraints,
 }
 
-def validate_platform_constraints(platform: str, changes: list[DeviceChange]) -> list[str]:
+
+def validate_platform_constraints(platform: str | None, changes: list[DeviceChange]) -> list[str]:
     """Validate a planned diff against platform-specific constraints.
-    
+
     Returns a list of error strings. If the list is empty, validation passed.
     """
     if not platform:
         return []
-    
+
     validator = _PLATFORM_VALIDATORS.get(platform.lower())
     if not validator:
         return []
-        
+
     return validator(changes)
