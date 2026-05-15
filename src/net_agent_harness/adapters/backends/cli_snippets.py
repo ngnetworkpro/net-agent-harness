@@ -261,7 +261,7 @@ def build_cli_fallback_snippet(
     device_name: str,
     vendor: DeviceVendor,
     vlan_additions: dict[str, str],
-    port_changes: list[PortSpec] | list = (),
+    port_changes: list[PortSpec] = [],
     platform: str | None = None,
 ) -> ConfigSnippet:
     """Build a CLI fallback ConfigSnippet using the appropriate vendor strategy.
