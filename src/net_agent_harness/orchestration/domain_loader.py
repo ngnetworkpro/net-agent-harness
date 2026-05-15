@@ -1,3 +1,4 @@
+import copy
 from functools import lru_cache
 import importlib.resources
 import yaml
@@ -9,7 +10,7 @@ class DomainLoadError(Exception):
     pass
 
 @lru_cache(maxsize=16)
-def load_domain_context(domain: NetworkDomain) -> DomainContext:
+def _load_domain_context_cached(domain: NetworkDomain) -> DomainContext:
     try:
         core_text = importlib.resources.files("net_agent_harness.glossaries").joinpath("core_terms.yaml").read_text()
         core = yaml.safe_load(core_text)
@@ -40,3 +41,7 @@ def load_domain_context(domain: NetworkDomain) -> DomainContext:
         intents=intents,
         examples=examples,
     )
+
+
+def load_domain_context(domain: NetworkDomain) -> DomainContext:
+    return copy.deepcopy(_load_domain_context_cached(domain))

@@ -130,3 +130,26 @@ async def test_stage_coordinator_terraform_skips_llm(tmp_path, monkeypatch):
     assert fallback_snippets[0].backend_type == RenderBackendType.CLI
     assert "vlan 220" in fallback_snippets[0].rendered_text
     assert "set interfaces ge-0/0/1" in fallback_snippets[0].rendered_text
+
+
+@pytest.mark.asyncio
+async def test_stage_coordinator_rejects_render_without_apply(tmp_path):
+    store = ArtifactStore(tmp_path)
+    coordinator = StageCoordinator(store)
+    change_request = ChangeRequest(
+        meta=ArtifactMeta(run_id="run-1", artifact_id="change-1", created_by="test"),
+        domain=NetworkDomain.VLAN,
+        scope=ScopeRef(site="HQ", device_names=["sw1"]),
+        requested_change=RequestedChange(
+            summary="No-op check",
+            requested_by="tester",
+            intent="No-op",
+        ),
+        target_scope="device",
+        rollback_plan=RollbackPlan(summary="Revert"),
+        risk=ChangeRisk.LOW,
+        plan_decision=PlanDecision(decision=PlanDecisionType.NO_OP, reason="already done", diff=[]),
+    )
+
+    with pytest.raises(ValueError, match="Render rejected"):
+        await coordinator.render(change_request)

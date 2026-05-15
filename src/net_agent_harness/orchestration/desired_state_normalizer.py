@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 from ..models.enums import NetworkDomain
 
 
@@ -22,15 +24,15 @@ def _normalize_vlan_desired_state(state: dict) -> dict:
     operations = []
 
     if "vlans" in state and state["vlans"]:
-        first_vlan = state["vlans"][0]
-        operations.append({
-            "object_type": "vlan",
-            "operation": "ensure_present",
-            "attributes": {
-                "vlan_id": first_vlan.get("vlan_id"),
-                "name": first_vlan.get("name", ""),
-            },
-        })
+        for vlan in state["vlans"]:
+            operations.append({
+                "object_type": "vlan",
+                "operation": "ensure_present",
+                "attributes": {
+                    "vlan_id": vlan.get("vlan_id"),
+                    "name": vlan.get("name", ""),
+                },
+            })
 
     elif "vlan_id" in state:
         operations.append({
@@ -62,6 +64,6 @@ def _normalize_vlan_desired_state(state: dict) -> dict:
     return {"operations": operations} if operations else state
 
 
-_NORMALIZERS: dict[NetworkDomain, callable] = {
+_NORMALIZERS: dict[NetworkDomain, Callable[[dict], dict]] = {
     NetworkDomain.VLAN: _normalize_vlan_desired_state,
 }

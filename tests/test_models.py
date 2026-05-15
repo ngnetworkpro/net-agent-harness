@@ -66,3 +66,29 @@ def test_change_request_model():
         risk=ChangeRisk.LOW,
     )
     assert model.scope.site == "HQ"
+
+
+def test_requested_change_prefers_vlan_desired_state_model():
+    requested = RequestedChange(
+        summary="Update VLAN intent",
+        intent="Ensure VLAN 220 exists",
+        desired_state={
+            "operations": [
+                {
+                    "object_type": "vlan",
+                    "operation": "ensure_present",
+                    "attributes": {"vlan_id": 220, "name": "Engineering"},
+                }
+            ]
+        },
+    )
+    assert requested.desired_state.__class__.__name__ == "VlanDesiredState"
+
+
+def test_finding_severity_is_constrained():
+    import pytest
+    from pydantic import ValidationError
+    from net_agent_harness.models.artifacts import Finding
+
+    with pytest.raises(ValidationError):
+        Finding(code="X", severity="urgent", message="bad")

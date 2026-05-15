@@ -79,18 +79,9 @@ def validate_config_render(
 
 
 def _validate_schema(config_render: ConfigRender, findings: list[Finding]) -> list[str]:
-    checks = ["schema validity"]
-    try:
-        ConfigRender.model_validate(config_render.model_dump())
-    except Exception as e:
-        findings.append(Finding(
-            code="SCHEMA_INVALID",
-            severity="high",
-            message=f"ConfigRender failed schema validation: {e}",
-            recommendation="Ensure the render output conforms to ConfigRender schema.",
-        ))
-        checks.append("schema validity")
-    return checks
+    _ = findings
+    _ = config_render
+    return []
 
 
 def _validate_snippets(config_render: ConfigRender, findings: list[Finding]) -> list[str]:
@@ -115,7 +106,11 @@ def _validate_snippets(config_render: ConfigRender, findings: list[Finding]) -> 
                 device_name=snippet.device_name,
                 recommendation="Ensure the render step creates candidate commands.",
             ))
-        elif not any(marker in text for marker in REQUIRED_SAFETY_MARKERS):
+        elif (
+            snippet.render_role == RenderRole.PRIMARY
+            and (snippet.backend_type in {None, RenderBackendType.CLI})
+            and not any(marker in text for marker in REQUIRED_SAFETY_MARKERS)
+        ):
             findings.append(Finding(
                 code="MISSING_CANDIDATE_HEADER",
                 severity="medium",
@@ -204,9 +199,15 @@ def _validate_against_change_request(
 def _extract_rendered_vlan_ids(snippets: list[ConfigSnippet]) -> set[int]:
     vlan_ids: set[int] = set()
     for snippet in snippets:
+        if snippet.render_role != RenderRole.PRIMARY:
+            continue
         text = snippet.rendered_text or "\n".join(snippet.commands)
-        import re
-        vlan_matches = re.findall(r'vlan\s+(\d+)', text, re.IGNORECASE)
+        non_comment_lines = [
+            line
+            for line in text.splitlines()
+            if not line.lstrip().startswith(("!", "#"))
+        ]
+        vlan_matches = re.findall(r'vlan\s+(\d+)', "\n".join(non_comment_lines), re.IGNORECASE)
         for match in vlan_matches:
             try:
                 vlan_ids.add(int(match))

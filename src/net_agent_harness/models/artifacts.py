@@ -12,7 +12,6 @@ class ConfigSnippet(BaseModel):
     backend_type: RenderBackendType | None = None
     render_role: RenderRole | None = None
     path_hint: str | None = None
-    cli_commands: list[str] = Field(default_factory=list)
     api_payload: dict | None = None
     commands: list[str] = Field(default_factory=list)
     rendered_text: str | None = None
@@ -97,7 +96,7 @@ class RenderRequest(BaseModel):
 class Finding(BaseModel):
     model_config = ConfigDict(extra="forbid")
     code: str
-    severity: str
+    severity: Literal["low", "medium", "high", "critical"]
     message: str
     device_name: str | None = None
     recommendation: str | None = None
@@ -113,6 +112,7 @@ class ValidationReport(BaseModel):
 
 
 class ExecutionResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     meta: ArtifactMeta
     backend: str
     status: str

@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from collections import OrderedDict
 from ..models.changes import DeviceChange, PlanDecision, VlanChange, VlanSpec, PortSpec
 from ..models.enums import NetworkDomain, PlanDecisionType
 from ..tools.vlan_state import compute_vlan_diff, vlan_exists
@@ -34,23 +35,27 @@ def _load_device_from_inventory(
     device_name: str,
     inventory_source: str,
 ):
-    from .inventory_tools import lookup_inventory_sync
+    from .inventory_tools import lookup_device_context_sync
     from ..models.inventory import DeviceInfo
 
-    inventory_data = lookup_inventory_sync(
+    inventory_data = lookup_device_context_sync(
         inventory_source=inventory_source,
         site=site,
         device_name=device_name
     )
 
-    results = inventory_data.get("results", [])
-    if not results:
+    device_data = inventory_data.get("device")
+    if not device_data:
         return None
 
-    device_dict = next((d for d in results if d.get("name") == device_name), None)
-    if not device_dict:
-        return None
-    return DeviceInfo(**device_dict)
+    if inventory_source == "netbox":
+        device_data = {
+            **device_data,
+            "interfaces": inventory_data.get("interfaces", []),
+            "vlans": [],
+        }
+
+    return DeviceInfo.model_validate(device_data)
 
 
 def _merge_device_changes(all_changes: list[DeviceChange]) -> list[DeviceChange]:
@@ -60,19 +65,34 @@ def _merge_device_changes(all_changes: list[DeviceChange]) -> list[DeviceChange]
         return all_changes
 
     merged_vlans: list[VlanSpec] = []
+    merged_vlans_to_remove: list[VlanSpec] = []
     merged_ports: list[PortSpec] = []
     device_name = all_changes[0].device
 
     for dc in all_changes:
         merged_vlans.extend(dc.changes.vlans_to_create)
+        merged_vlans_to_remove.extend(dc.changes.vlans_to_remove)
         merged_ports.extend(dc.changes.ports_to_update)
+
+    def _dedupe_vlans(vlans: list[VlanSpec]) -> list[VlanSpec]:
+        deduped = OrderedDict()
+        for vlan in vlans:
+            deduped[vlan.id] = vlan
+        return list(deduped.values())
+
+    def _dedupe_ports(ports: list[PortSpec]) -> list[PortSpec]:
+        deduped = OrderedDict()
+        for port in ports:
+            deduped[(port.interface, port.vlan_id, port.mode)] = port
+        return list(deduped.values())
 
     return [DeviceChange(
         device=device_name,
         domain=NetworkDomain.VLAN,
         changes=VlanChange(
-            vlans_to_create=merged_vlans,
-            ports_to_update=merged_ports,
+            vlans_to_create=_dedupe_vlans(merged_vlans),
+            vlans_to_remove=_dedupe_vlans(merged_vlans_to_remove),
+            ports_to_update=_dedupe_ports(merged_ports),
         ),
     )]
 
@@ -89,6 +109,10 @@ def _evaluate_vlan_operations(
         return _blocked(
             f"Device '{device_name}' was not found in the inventory snapshot for site '{site}. "
             "Verify the device name and site."
+        )
+    if inventory_source.lower() == "netbox" and not device.vlans:
+        return _blocked(
+            f"Current VLAN state for '{device_name}' is unavailable from NetBox inventory data."
         )
 
     operations = desired_state.get("operations", [])
@@ -131,6 +155,7 @@ def _evaluate_vlan_operations(
                     domain=NetworkDomain.VLAN,
                     changes=VlanChange(
                         vlans_to_create=[],
+                        vlans_to_remove=[VlanSpec(id=vlan_id, name=vlan_name)],
                         ports_to_update=[],
                     ),
                 ))
@@ -195,9 +220,10 @@ def _evaluate_vlan_operations(
     merged_changes = _merge_device_changes(all_device_changes)
 
     merged_vlans = merged_changes[0].changes.vlans_to_create if merged_changes else []
+    merged_vlans_to_remove = merged_changes[0].changes.vlans_to_remove if merged_changes else []
     merged_ports = merged_changes[0].changes.ports_to_update if merged_changes else []
 
-    if not merged_vlans and not merged_ports:
+    if not merged_vlans and not merged_vlans_to_remove and not merged_ports:
         return _no_op(f"No changes required for {device_name}.")
 
     return _apply("; ".join(reason_parts) + ".", merged_changes)
@@ -211,7 +237,7 @@ _DOMAIN_EVALUATORS: dict[str, Callable[..., PlanDecision]] = {
 def evaluate_intent_state(
     run_id: str,
     domain: str,
-    site: str,
+    site: str | None,
     device_names: list[str],
     desired_state: dict | None = None,
     inventory_source: str = "mock",
