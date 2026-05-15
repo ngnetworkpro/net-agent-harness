@@ -1,5 +1,6 @@
 from net_agent_harness.adapters.netbox_adapter import NetBoxAdapter
-from net_agent_harness.tools.inventory_tools import _normalize_device, _normalize_interface, _normalize_ip
+from net_agent_harness.tools.inventory_tools import _normalize_device, _normalize_interface, _normalize_ip, _normalize_resolved_target, _infer_vendor_from_platform
+from net_agent_harness.models.enums import DeviceVendor
 
 
 def test_netbox_adapter_init():
@@ -93,3 +94,51 @@ def test_normalize_interface_and_ip():
     assert iface_out['untagged_vlan'] == 220
     assert iface_out['tagged_vlans'] == [221, 222]
     assert ip_out['interface'] == 'Vlan220'
+
+
+def test_infer_vendor_from_platform_known():
+    assert _infer_vendor_from_platform("mist") == DeviceVendor.JUNIPER
+    assert _infer_vendor_from_platform("MIST") == DeviceVendor.JUNIPER
+    assert _infer_vendor_from_platform("ios") == DeviceVendor.CISCO
+    assert _infer_vendor_from_platform("ios-xe") == DeviceVendor.CISCO
+    assert _infer_vendor_from_platform("nxos") == DeviceVendor.CISCO
+    assert _infer_vendor_from_platform("meraki") == DeviceVendor.MERAKI
+    assert _infer_vendor_from_platform("eos") == DeviceVendor.ARISTA
+
+
+def test_infer_vendor_from_platform_unknown():
+    assert _infer_vendor_from_platform("unknown-platform") is None
+    assert _infer_vendor_from_platform(None) is None
+    assert _infer_vendor_from_platform("") is None
+
+
+def test_normalize_resolved_target_uses_explicit_vendor():
+    target = _normalize_resolved_target({
+        "name": "sw1",
+        "platform": "ios",
+        "vendor": "juniper",
+    })
+    # Explicit vendor takes precedence over platform inference
+    assert target.vendor == DeviceVendor.JUNIPER
+
+
+def test_normalize_resolved_target_infers_vendor_from_platform():
+    target = _normalize_resolved_target({
+        "name": "sw1",
+        "platform": "mist",
+    })
+    # vendor absent → inferred from platform
+    assert target.vendor == DeviceVendor.JUNIPER
+
+
+def test_normalize_resolved_target_vendor_none_when_platform_unknown():
+    target = _normalize_resolved_target({
+        "name": "sw1",
+        "platform": "custom-os",
+    })
+    assert target.vendor is None
+
+
+def test_normalize_resolved_target_vendor_none_when_no_platform():
+    target = _normalize_resolved_target({"name": "sw1"})
+    assert target.vendor is None

@@ -35,8 +35,8 @@ def planner_system_prompt(ctx: RunContext[RunContextData]) -> str:
         "7. If the request is ambiguous, return blocked with a clear reason. ",
         "8. If the request asks for something that may already be true, describe the desired end state so a later diff stage can determine no-op vs apply. ",
         "Target Resolution: ",
-        "During planning, call resolve_device_target if the request names a specific device, "
-        "or resolve_site_targets if the request references a site without a specific device. "
+        "During planning, call get_device_target if the request names a specific device, "
+        "or get_site_targets if the request references a site without a specific device. "
         "Use the inventory results to inform risk, assumptions, and dependency fields. "
         "Note: resolved_targets in your output will be validated and overwritten by the "
         "orchestration layer. Focus on populating scope, requested_change, risk, and "

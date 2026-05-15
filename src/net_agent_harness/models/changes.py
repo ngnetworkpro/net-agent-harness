@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from .common import ArtifactMeta, ScopeRef
-from .enums import ChangeRisk, TargetScope, PlanDecisionType, NetworkDomain, SwitchportMode
+from .enums import ChangeRisk, TargetScope, PlanDecisionType, NetworkDomain, SwitchportMode, DeviceVendor
 from typing import Any, Union, Literal
 
 
@@ -43,6 +43,7 @@ class ResolvedTarget(BaseModel):
     role: str | None = Field(default=None, description="Resolved device role")
     platform: str | None = Field(default=None, description="Resolved platform")
     primary_ip: str | None = Field(default=None, description="Resolved management IP")
+    vendor: DeviceVendor | None = Field(default=None, description="Resolved device vendor")
 
 
 class RequestedChange(BaseModel):

@@ -2,10 +2,33 @@ from pydantic_ai import RunContext
 
 from ..adapters import mock_inventory_adapter
 from ..adapters.netbox_adapter import build_netbox_adapter_from_settings
-from ..orchestration.run_context import RunContextData
 from ..models.changes import ScopeRef, ResolvedTarget
+from ..models.enums import DeviceVendor
+from ..orchestration.run_context import RunContextData
 
 ELIGIBLE_SITE_ROLES = {"access", "access-switch", "switch"}
+
+# Platform string → vendor inference map.
+# Used to populate ResolvedTarget.vendor when inventory does not include it.
+_PLATFORM_VENDOR_MAP: dict[str, DeviceVendor] = {
+    "mist": DeviceVendor.JUNIPER,
+    "junos": DeviceVendor.JUNIPER,
+    "ios": DeviceVendor.CISCO,
+    "ios-xe": DeviceVendor.CISCO,
+    "ios-xr": DeviceVendor.CISCO,
+    "nxos": DeviceVendor.CISCO,
+    "nx-os": DeviceVendor.CISCO,
+    "eos": DeviceVendor.ARISTA,
+    "meraki": DeviceVendor.MERAKI,
+    "panos": DeviceVendor.PALO_ALTO,
+}
+
+
+def _infer_vendor_from_platform(platform: str | None) -> DeviceVendor | None:
+    """Return a DeviceVendor inferred from a platform string, or None."""
+    if not platform:
+        return None
+    return _PLATFORM_VENDOR_MAP.get(platform.lower())
 
 
 def _mock_inventory_snapshot(site: str | None = None, device_name: str | None = None) -> dict:
@@ -64,12 +87,24 @@ def _normalize_device(item: dict) -> dict:
 
 
 def _normalize_resolved_target(item: dict) -> ResolvedTarget:
+    vendor_raw = item.get("vendor")
+    vendor: DeviceVendor | None = None
+    if isinstance(vendor_raw, DeviceVendor):
+        vendor = vendor_raw
+    elif vendor_raw:
+        try:
+            vendor = DeviceVendor(vendor_raw)
+        except ValueError:
+            pass
+    if vendor is None:
+        vendor = _infer_vendor_from_platform(item.get("platform"))
     return ResolvedTarget(
         name=item.get("name"),
         site=item.get("site"),
         role=item.get("role"),
         platform=item.get("platform"),
         primary_ip=item.get("primary_ip") or item.get("management_ip"),
+        vendor=vendor,
     )
 
 

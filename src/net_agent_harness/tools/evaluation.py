@@ -2,6 +2,7 @@ from collections.abc import Callable
 from ..models.changes import DeviceChange, PlanDecision, VlanChange, VlanSpec, PortSpec
 from ..models.enums import NetworkDomain, PlanDecisionType
 from ..tools.vlan_state import compute_vlan_diff, vlan_exists
+from ..orchestration.platform_constraints import validate_platform_constraints
 
 
 def _blocked(reason: str) -> PlanDecision:
@@ -82,8 +83,6 @@ def normalize_vlan_diff(vlans: list[VlanSpec]) -> list[VlanSpec]:
 def _merge_device_changes(all_changes: list[DeviceChange]) -> list[DeviceChange]:
     if not all_changes:
         return []
-    if len(all_changes) == 1:
-        return all_changes
 
     merged_vlans: list[VlanSpec] = []
     merged_vlans_to_remove: list[VlanSpec] = []
@@ -95,12 +94,6 @@ def _merge_device_changes(all_changes: list[DeviceChange]) -> list[DeviceChange]
         merged_vlans_to_remove.extend(dc.changes.vlans_to_remove)
         merged_ports.extend(dc.changes.ports_to_update)
 
-    def _dedupe_vlans(vlans: list[VlanSpec]) -> list[VlanSpec]:
-        deduped: dict[int, VlanSpec] = {}
-        for vlan in vlans:
-            deduped[vlan.id] = vlan
-        return list(deduped.values())
-
     def _dedupe_ports(ports: list[PortSpec]) -> list[PortSpec]:
         deduped: dict[tuple[str, int, str], PortSpec] = {}
         for port in ports:
@@ -111,8 +104,8 @@ def _merge_device_changes(all_changes: list[DeviceChange]) -> list[DeviceChange]
         device=device_name,
         domain=NetworkDomain.VLAN,
         changes=VlanChange(
-            vlans_to_create=_dedupe_vlans(merged_vlans),
-            vlans_to_remove=_dedupe_vlans(merged_vlans_to_remove),
+            vlans_to_create=normalize_vlan_diff(merged_vlans),
+            vlans_to_remove=normalize_vlan_diff(merged_vlans_to_remove),
             ports_to_update=_dedupe_ports(merged_ports),
         ),
     )]
@@ -246,6 +239,10 @@ def _evaluate_vlan_operations(
 
     if not merged_vlans and not merged_vlans_to_remove and not merged_ports:
         return _no_op(f"No changes required for {device_name}.")
+
+    platform_errors = validate_platform_constraints(device.platform, merged_changes)
+    if platform_errors:
+        return _blocked("; ".join(platform_errors))
 
     return _apply("; ".join(reason_parts) + ".", merged_changes)
 
