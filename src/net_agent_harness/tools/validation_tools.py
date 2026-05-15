@@ -38,10 +38,8 @@ def validate_config_render(
         "candidate header present",
         "non-empty snippet list",
         "warnings reviewed",
-        "schema validity",
     ]
 
-    checks_run.extend(_validate_schema(config_render, findings))
     checks_run.extend(_validate_snippets(config_render, findings))
 
     if change_request is not None:
@@ -76,14 +74,6 @@ def validate_config_render(
         findings=findings,
         approved_for_execution=approved_for_execution,
     )
-
-
-def _validate_schema(config_render: ConfigRender, findings: list[Finding]) -> list[str]:
-    _ = findings
-    _ = config_render
-    return []
-
-
 def _validate_snippets(config_render: ConfigRender, findings: list[Finding]) -> list[str]:
     checks = ["non-empty snippet list", "candidate header present"]
 
@@ -202,11 +192,7 @@ def _extract_rendered_vlan_ids(snippets: list[ConfigSnippet]) -> set[int]:
         if snippet.render_role != RenderRole.PRIMARY:
             continue
         text = snippet.rendered_text or "\n".join(snippet.commands)
-        non_comment_lines = [
-            line
-            for line in text.splitlines()
-            if not line.lstrip().startswith(("!", "#"))
-        ]
+        non_comment_lines = _strip_comment_lines(text)
         vlan_matches = re.findall(r'vlan\s+(\d+)', "\n".join(non_comment_lines), re.IGNORECASE)
         for match in vlan_matches:
             try:
@@ -214,6 +200,14 @@ def _extract_rendered_vlan_ids(snippets: list[ConfigSnippet]) -> set[int]:
             except ValueError:
                 pass
     return vlan_ids
+
+
+def _strip_comment_lines(text: str) -> list[str]:
+    return [
+        line
+        for line in text.splitlines()
+        if not line.lstrip().startswith(("!", "#"))
+    ]
 
 def validate_config_render_acceptance(
     change_request: ChangeRequest,

@@ -1,12 +1,14 @@
+import pytest
+from pydantic import ValidationError
+
+from net_agent_harness.models.artifacts import Finding
 from net_agent_harness.models.changes import ChangeRequest, RequestedChange, RollbackPlan
 from net_agent_harness.models.common import ArtifactMeta, ScopeRef
 from net_agent_harness.models.enums import ChangeRisk, NetworkDomain
 
 
 def test_pydantic_bounds_validation():
-    from pydantic import ValidationError
     from net_agent_harness.models.changes import VlanSpec, PortSpec
-    import pytest
 
     # Test VLAN ID bounds (must be between 1 and 4094)
     with pytest.raises(ValidationError):
@@ -28,9 +30,7 @@ def test_pydantic_bounds_validation():
     assert valid_port.mode == "access"
 
 def test_strict_structural_validation():
-    from pydantic import ValidationError
     from net_agent_harness.models.changes import VlanDesiredState, VlanDesiredStateOperation, VlanAttributes
-    import pytest
 
     # Test forbid extra properties
     with pytest.raises(ValidationError):
@@ -86,9 +86,5 @@ def test_requested_change_prefers_vlan_desired_state_model():
 
 
 def test_finding_severity_is_constrained():
-    import pytest
-    from pydantic import ValidationError
-    from net_agent_harness.models.artifacts import Finding
-
     with pytest.raises(ValidationError):
         Finding(code="X", severity="urgent", message="bad")

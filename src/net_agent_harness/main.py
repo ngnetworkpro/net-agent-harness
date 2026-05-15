@@ -181,8 +181,6 @@ async def _async_plan(request: str, operator: str = "local-user"):
             desired_state=normalized_desired_state,
             inventory_source=settings.inventory_source,
         )
-    # 4. ENFORCE
-    reporter.update(run_stage.value, "running", "🔧 Enforcing plan decision...")
     planned.plan_decision = plan_decision
     reporter.update(run_stage.value, "running", "💾 Persisting change request artifact...")
 
