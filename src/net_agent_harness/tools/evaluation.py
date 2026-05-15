@@ -2,6 +2,7 @@ from collections.abc import Callable
 from ..models.changes import DeviceChange, PlanDecision, VlanChange, VlanSpec, PortSpec
 from ..models.enums import NetworkDomain, PlanDecisionType
 from ..tools.vlan_state import compute_vlan_diff, vlan_exists
+from ..orchestration.platform_constraints import validate_platform_constraints
 
 
 def _blocked(reason: str) -> PlanDecision:
@@ -82,8 +83,6 @@ def normalize_vlan_diff(vlans: list[VlanSpec]) -> list[VlanSpec]:
 def _merge_device_changes(all_changes: list[DeviceChange]) -> list[DeviceChange]:
     if not all_changes:
         return []
-    if len(all_changes) == 1:
-        return all_changes
 
     merged_vlans: list[VlanSpec] = []
     merged_vlans_to_remove: list[VlanSpec] = []
@@ -240,6 +239,10 @@ def _evaluate_vlan_operations(
 
     if not merged_vlans and not merged_vlans_to_remove and not merged_ports:
         return _no_op(f"No changes required for {device_name}.")
+
+    platform_errors = validate_platform_constraints(device.platform, merged_changes)
+    if platform_errors:
+        return _blocked("; ".join(platform_errors))
 
     return _apply("; ".join(reason_parts) + ".", merged_changes)
 
