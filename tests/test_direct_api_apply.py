@@ -3,7 +3,7 @@ from unittest.mock import patch, AsyncMock
 import httpx
 
 from net_agent_harness.adapters.backends.direct_api import DirectAPIBackendAdapter
-from net_agent_harness.models.artifacts import ConfigRender, ConfigSnippet, ArtifactMeta
+from net_agent_harness.models.artifacts import ApiRequestPayload, ConfigRender, ConfigSnippet, ArtifactMeta
 from net_agent_harness.models.enums import RenderBackendType, RenderRole
 
 @pytest.fixture
@@ -20,11 +20,7 @@ def api_snippet():
         device_name="sw1",
         backend_type=RenderBackendType.API,
         render_role=RenderRole.PRIMARY,
-        api_payload={
-            "operations": [
-                {"action": "create_vlan", "endpoint": "/api/test", "payload": {"id": 10}}
-            ]
-        },
+        api_payload=ApiRequestPayload(method="POST", path="/api/test", body={"id": 10}),
         rendered_text="DO NOT READ THIS",
         commands=[]
     )
@@ -41,13 +37,13 @@ def cli_snippet():
     )
 
 @pytest.mark.asyncio
-@patch("httpx.AsyncClient.post")
-async def test_direct_api_apply_reads_from_api_payload(mock_post, adapter, base_meta, api_snippet):
+@patch("httpx.AsyncClient.request")
+async def test_direct_api_apply_reads_from_api_payload(mock_request, adapter, base_meta, api_snippet):
     # Setup mock to succeed
     from unittest.mock import MagicMock
     mock_resp = AsyncMock()
     mock_resp.raise_for_status = MagicMock()
-    mock_post.return_value = mock_resp
+    mock_request.return_value = mock_resp
 
     config_render = ConfigRender(
         meta=base_meta,
@@ -59,11 +55,16 @@ async def test_direct_api_apply_reads_from_api_payload(mock_post, adapter, base_
 
     assert result.status == "success"
     assert "Successfully executed API operations for 1 actions." in result.detail
-    mock_post.assert_called_once_with("https://api.example.com/api/test", json={"id": 10})
+    mock_request.assert_called_once_with(
+        "POST",
+        "https://api.example.com/api/test",
+        json={"id": 10},
+        params={},
+    )
 
 @pytest.mark.asyncio
-@patch("httpx.AsyncClient.post")
-async def test_direct_api_apply_skips_cli_snippets(mock_post, adapter, base_meta, cli_snippet):
+@patch("httpx.AsyncClient.request")
+async def test_direct_api_apply_skips_cli_snippets(mock_request, adapter, base_meta, cli_snippet):
     config_render = ConfigRender(
         meta=base_meta,
         summary="Test render",
@@ -74,15 +75,15 @@ async def test_direct_api_apply_skips_cli_snippets(mock_post, adapter, base_meta
 
     assert result.status == "success"
     assert "No primary API snippets to execute" in result.detail
-    mock_post.assert_not_called()
+    mock_request.assert_not_called()
 
 @pytest.mark.asyncio
-@patch("httpx.AsyncClient.post")
-async def test_direct_api_apply_returns_execution_result(mock_post, adapter, base_meta, api_snippet):
+@patch("httpx.AsyncClient.request")
+async def test_direct_api_apply_returns_execution_result(mock_request, adapter, base_meta, api_snippet):
     from unittest.mock import MagicMock
     mock_resp = AsyncMock()
     mock_resp.raise_for_status = MagicMock()
-    mock_post.return_value = mock_resp
+    mock_request.return_value = mock_resp
 
     config_render = ConfigRender(
         meta=base_meta,
@@ -98,9 +99,9 @@ async def test_direct_api_apply_returns_execution_result(mock_post, adapter, bas
     assert result.meta.run_id == "run-1"
 
 @pytest.mark.asyncio
-@patch("httpx.AsyncClient.post")
-async def test_direct_api_apply_surfaces_api_errors(mock_post, adapter, base_meta, api_snippet):
-    mock_post.side_effect = httpx.ConnectError("Connection refused")
+@patch("httpx.AsyncClient.request")
+async def test_direct_api_apply_surfaces_api_errors(mock_request, adapter, base_meta, api_snippet):
+    mock_request.side_effect = httpx.ConnectError("Connection refused")
 
     config_render = ConfigRender(
         meta=base_meta,
@@ -115,12 +116,12 @@ async def test_direct_api_apply_surfaces_api_errors(mock_post, adapter, base_met
     assert "Connection refused" in result.detail
 
 @pytest.mark.asyncio
-@patch("httpx.AsyncClient.post")
-async def test_direct_api_apply_does_not_reinterpret_render_summary(mock_post, adapter, base_meta, api_snippet):
+@patch("httpx.AsyncClient.request")
+async def test_direct_api_apply_does_not_reinterpret_render_summary(mock_request, adapter, base_meta, api_snippet):
     from unittest.mock import MagicMock
     mock_resp = AsyncMock()
     mock_resp.raise_for_status = MagicMock()
-    mock_post.return_value = mock_resp
+    mock_request.return_value = mock_resp
 
     config_render = ConfigRender(
         meta=base_meta,
@@ -131,4 +132,4 @@ async def test_direct_api_apply_does_not_reinterpret_render_summary(mock_post, a
     result = await adapter.apply(config_render)
 
     assert result.status == "success"
-    mock_post.assert_called_once()
+    mock_request.assert_called_once()

@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import patch
 
 from net_agent_harness.adapters.backends.direct_api import DirectAPIBackendAdapter
-from net_agent_harness.models.artifacts import ArtifactMeta
+from net_agent_harness.models.artifacts import ApiRequestPayload, ArtifactMeta
 from net_agent_harness.models.changes import ChangeRequest, PlanDecision, DeviceChange, VlanChange, VlanSpec, PortSpec, ResolvedTarget
 from net_agent_harness.models.enums import DeviceVendor, NetworkDomain, PlanDecisionType, RenderBackendType, RenderRole
 
@@ -63,7 +63,9 @@ async def test_direct_api_render_api_capable_device_shape(adapter, change_reques
 
     assert primary.backend_type == RenderBackendType.API
     assert primary.api_payload is not None
-    assert primary.api_payload.get("operations")
+    assert isinstance(primary.api_payload, ApiRequestPayload)
+    assert primary.api_payload.body is not None
+    assert primary.api_payload.body.get("operations")
     assert primary.commands == []
     assert primary.rendered_text
 

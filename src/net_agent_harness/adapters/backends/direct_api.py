@@ -91,26 +91,24 @@ class DirectAPIBackendAdapter(BackendAdapter):
                     continue
                 
                 payload = snippet.api_payload
-                if not payload or "operations" not in payload:
+                if not payload:
                     continue
 
                 device_name = snippet.device_name
+                action = f"{payload.method} {payload.path}"
 
-                for op in payload["operations"]:
-                    action = op.get("action", "unknown_action")
-                    endpoint = op.get("endpoint", "")
-                    data = op.get("payload", {})
-                    
-                    try:
-                        # Dummy execution logic. URL would be resolved from vendor context.
-                        url = f"https://api.example.com{endpoint}"
-                        # Real implementation would use appropriate method (POST, PUT, etc.) based on action
-                        # Since we do not have real API credentials, this will raise an exception.
-                        response = await client.post(url, json=data)
-                        response.raise_for_status()
-                        results.append(f"Success for {device_name} - {action}")
-                    except Exception as e:
-                        errors.append(f"Error on {device_name} - {action}: {type(e).__name__}({e})")
+                try:
+                    url = f"https://api.example.com{payload.path}"
+                    response = await client.request(
+                        payload.method,
+                        url,
+                        json=payload.body,
+                        params=payload.query,
+                    )
+                    response.raise_for_status()
+                    results.append(f"Success for {device_name} - {action}")
+                except Exception as e:
+                    errors.append(f"Error on {device_name} - {action}: {type(e).__name__}({e})")
 
         status = "failed" if errors else "success"
         if errors:

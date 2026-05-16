@@ -1,6 +1,7 @@
 import pytest
 from net_agent_harness.agents.config_render_agent import _enforce_snippets
-from net_agent_harness.models.artifacts import ConfigRenderOutput, ConfigSnippet, RenderRequest, VlanRenderPayload, VlanRenderOp, RenderTarget
+from pydantic import ValidationError
+from net_agent_harness.models.artifacts import ApiRequestPayload, ConfigRenderOutput, ConfigSnippet, RenderRequest, VlanRenderPayload, VlanRenderOp, RenderTarget
 from net_agent_harness.models.artifacts import OperationType
 from net_agent_harness.models.enums import NetworkDomain, RenderBackendType, RenderRole
 
@@ -35,7 +36,7 @@ async def test_validator_passes_api_primary_snippet(mock_ctx):
                 device_name="sw1",
                 backend_type=RenderBackendType.API,
                 render_role=RenderRole.PRIMARY,
-                api_payload={"vlan_id": 10},
+                api_payload=ApiRequestPayload(method="POST", path="/vlans", body={"vlan_id": 10}),
                 commands=[]
             )
         ]
@@ -69,7 +70,11 @@ async def test_validator_passes_mixed_snippets(mock_ctx):
                 device_name="sw1",
                 backend_type=RenderBackendType.API,
                 render_role=RenderRole.PRIMARY,
-                api_payload={"operations": [{"action": "create_vlan"}]},
+                api_payload=ApiRequestPayload(
+                    method="POST",
+                    path="/operations/batch",
+                    body={"operations": [{"action": "create_vlan"}]},
+                ),
                 commands=[]
             ),
             ConfigSnippet(
@@ -126,3 +131,13 @@ async def test_validator_rejects_cli_snippet_with_missing_commands(mock_ctx):
     )
     with pytest.raises(ValueError, match="must have non-empty commands"):
         await _enforce_snippets(mock_ctx, output)
+
+
+def test_api_request_payload_rejects_unknown_fields():
+    with pytest.raises(ValidationError):
+        ApiRequestPayload(
+            method="POST",
+            path="/vlans",
+            body={"id": 10},
+            extra_field="nope",
+        )
