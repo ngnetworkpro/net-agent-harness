@@ -58,6 +58,22 @@ Do not collapse these stages unless explicitly asked to redesign the architectur
 - Backend selection and fallback ordering must be deterministic in orchestration and must not be invented by render.
 - Every render snippet must carry explicit `backend_type` and `render_role` labels (primary or fallback).
 
+#### ConfigSnippet contract
+
+API-primary snippet (`render_role=PRIMARY`, `backend_type=API`):
+- `api_payload`: required, non-empty structured operation dict.
+- `rendered_text`: required, human-readable preview of the API call.
+- `path_hint`: optional, endpoint or resource path hint for the reviewer.
+- `commands`: must be empty list; CLI data does not belong here.
+
+CLI-fallback snippet (`render_role=FALLBACK`, `backend_type=CLI`):
+- `commands`: required, non-empty list of vendor-specific CLI commands.
+- `rendered_text`: required, human-readable text joining the commands.
+- `api_payload`: must be None; API data does not belong here.
+
+Mixed output (API-capable device):
+A single device should emit one PRIMARY API snippet plus one FALLBACK CLI snippet as two separate `ConfigSnippet` entries in the output list. They share `device_name`.
+
 #### execute
 
 - Apply rendered operations.

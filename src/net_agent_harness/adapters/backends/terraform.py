@@ -26,7 +26,7 @@ class TerraformBackendAdapter(BackendAdapter):
         if change_request.plan_decision:
             if change_request.plan_decision.decision.value != "apply":
                 return ConfigRender(
-                    meta=self._make_meta(change_request),
+                    meta=self._make_meta(change_request, "terraform-backend"),
                     summary=f"No changes required: decision is '{change_request.plan_decision.decision.value}'.",
                 )
             for device_change in change_request.plan_decision.diff:
@@ -36,7 +36,7 @@ class TerraformBackendAdapter(BackendAdapter):
 
         if not any(additions_by_device.values()):
             return ConfigRender(
-                meta=self._make_meta(change_request),
+                meta=self._make_meta(change_request, "terraform-backend"),
                 summary="No VLAN additions detected in plan decision.",
                 warnings=["plan_decision contains no vlans_to_create entries"],
             )
@@ -98,7 +98,7 @@ class TerraformBackendAdapter(BackendAdapter):
             snippets.append(cli_fallback)
 
         return ConfigRender(
-            meta=self._make_meta(change_request),
+            meta=self._make_meta(change_request, "terraform-backend"),
             summary=f"Terraform: source-backed render from {source_label} for {len(additions_by_device)} device(s)",
             snippets=snippets,
         )
@@ -331,16 +331,6 @@ class TerraformBackendAdapter(BackendAdapter):
             if (parent / "pyproject.toml").exists():
                 return parent
         raise RuntimeError("Unable to resolve repository root from terraform backend path")
-
-
-    def _make_meta(self, change_request: ChangeRequest) -> ArtifactMeta:
-        return ArtifactMeta(
-            run_id=change_request.meta.run_id,
-            artifact_id=str(uuid4()),
-            version=1,
-            created_at=datetime.now(timezone.utc),
-            created_by="terraform-backend",
-        )
 
     @staticmethod
     def _parse_vlan_command_entry(cmd: str, device_name: str) -> dict[str, str]:

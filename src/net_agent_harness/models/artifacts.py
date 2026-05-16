@@ -7,6 +7,24 @@ from .changes import VlanSpec, PortSpec
 
 
 class ConfigSnippet(BaseModel):
+    """A configuration snippet for a target device.
+    
+    API-primary snippet (render_role=PRIMARY, backend_type=API):
+    - api_payload: required, non-empty structured operation dict
+    - rendered_text: required, human-readable preview of the API call
+    - path_hint: optional, endpoint or resource path hint for the reviewer
+    - commands: must be empty list; CLI data does not belong here
+
+    CLI-fallback snippet (render_role=FALLBACK, backend_type=CLI):
+    - commands: required, non-empty list of vendor-specific CLI commands
+    - rendered_text: required, human-readable text joining the commands
+    - api_payload: must be None; API data does not belong here
+
+    Mixed output (API-capable device):
+    A single device should emit one PRIMARY API snippet plus one FALLBACK CLI snippet
+    as two separate ConfigSnippet entries in the ConfigRender.snippets list.
+    They share device_name.
+    """
     model_config = ConfigDict(extra="forbid")
     device_name: str
     backend_type: RenderBackendType | None = None
