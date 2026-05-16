@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 import json
 
-from net_agent_harness.models.artifacts import ConfigSnippet
+from net_agent_harness.models.artifacts import ApiRequestPayload, ConfigSnippet
 from net_agent_harness.models.changes import PortSpec
 from net_agent_harness.models.enums import DeviceVendor, RenderBackendType, RenderRole
 
@@ -197,8 +197,12 @@ def build_api_primary_snippet(
     strategy = _resolve_strategy(vendor, platform)
     operations = strategy.build_vlan_operations(vlan_additions, list(port_changes))
     
-    api_payload = {"operations": operations}
-    rendered_text = json.dumps(api_payload, indent=2)
+    api_payload = ApiRequestPayload(
+        method="POST",
+        path="/operations/batch",
+        body={"operations": operations},
+    )
+    rendered_text = json.dumps(api_payload.model_dump(), indent=2)
 
     return ConfigSnippet(
         device_name=device_name,

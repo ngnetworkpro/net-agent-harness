@@ -6,6 +6,7 @@ from net_agent_harness.adapters.backends.api_operations import (
     MerakiApiStrategy,
     build_api_primary_snippet,
 )
+from net_agent_harness.models.artifacts import ApiRequestPayload
 from net_agent_harness.models.changes import PortSpec
 from net_agent_harness.models.enums import DeviceVendor, RenderBackendType, RenderRole
 
@@ -56,12 +57,15 @@ def test_build_api_primary_snippet_returns_correct_backendtype():
     assert snippet.backend_type == RenderBackendType.API
     assert snippet.render_role == RenderRole.PRIMARY
     assert snippet.api_payload is not None
-    assert "operations" in snippet.api_payload
-    assert len(snippet.api_payload["operations"]) == 1
+    assert isinstance(snippet.api_payload, ApiRequestPayload)
+    assert snippet.api_payload.method == "POST"
+    assert snippet.api_payload.path == "/operations/batch"
+    assert snippet.api_payload.body is not None
+    assert len(snippet.api_payload.body["operations"]) == 1
     
     # rendered_text should be human-readable JSON
     rendered_json = json.loads(snippet.rendered_text)
-    assert rendered_json == snippet.api_payload
+    assert rendered_json == snippet.api_payload.model_dump()
 
 def test_build_api_primary_snippet_has_empty_commands():
     snippet = build_api_primary_snippet(
