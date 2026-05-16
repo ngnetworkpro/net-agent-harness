@@ -1,5 +1,4 @@
 import pytest
-from pydantic_ai import RunContext
 from net_agent_harness.agents.config_render_agent import _enforce_snippets
 from net_agent_harness.models.artifacts import ConfigRenderOutput, ConfigSnippet, RenderRequest, VlanRenderPayload, VlanRenderOp, RenderTarget
 from net_agent_harness.models.artifacts import OperationType
@@ -56,6 +55,30 @@ async def test_validator_passes_cli_fallback_snippet(mock_ctx):
                 api_payload=None,
                 commands=["vlan 10"]
             )
+        ]
+    )
+    result = await _enforce_snippets(mock_ctx, output)
+    assert result == output
+
+@pytest.mark.asyncio
+async def test_validator_passes_mixed_snippets(mock_ctx):
+    output = ConfigRenderOutput(
+        summary="Test",
+        snippets=[
+            ConfigSnippet(
+                device_name="sw1",
+                backend_type=RenderBackendType.API,
+                render_role=RenderRole.PRIMARY,
+                api_payload={"operations": [{"action": "create_vlan"}]},
+                commands=[]
+            ),
+            ConfigSnippet(
+                device_name="sw1",
+                backend_type=RenderBackendType.CLI,
+                render_role=RenderRole.FALLBACK,
+                api_payload=None,
+                commands=["set vlans users vlan-id 10"]
+            ),
         ]
     )
     result = await _enforce_snippets(mock_ctx, output)

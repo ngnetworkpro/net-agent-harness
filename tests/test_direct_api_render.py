@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import patch
 
 from net_agent_harness.adapters.backends.direct_api import DirectAPIBackendAdapter
-from net_agent_harness.models.artifacts import ConfigSnippet, ArtifactMeta
+from net_agent_harness.models.artifacts import ArtifactMeta
 from net_agent_harness.models.changes import ChangeRequest, PlanDecision, DeviceChange, VlanChange, VlanSpec, PortSpec, ResolvedTarget
 from net_agent_harness.models.enums import DeviceVendor, NetworkDomain, PlanDecisionType, RenderBackendType, RenderRole
 
@@ -54,6 +54,25 @@ async def test_direct_api_render_returns_api_primary_snippets(adapter, change_re
     assert snippet.commands == []
 
 @pytest.mark.asyncio
+async def test_direct_api_render_api_capable_device_shape(adapter, change_request):
+    render_output = await adapter.render(change_request)
+
+    assert len(render_output.snippets) == 2
+    primary = next(s for s in render_output.snippets if s.render_role == RenderRole.PRIMARY)
+    fallback = next(s for s in render_output.snippets if s.render_role == RenderRole.FALLBACK)
+
+    assert primary.backend_type == RenderBackendType.API
+    assert primary.api_payload is not None
+    assert primary.api_payload.get("operations")
+    assert primary.commands == []
+    assert primary.rendered_text
+
+    assert fallback.backend_type == RenderBackendType.CLI
+    assert fallback.api_payload is None
+    assert fallback.commands
+    assert fallback.rendered_text
+
+@pytest.mark.asyncio
 async def test_direct_api_render_returns_cli_fallback_snippets(adapter, change_request):
     render_output = await adapter.render(change_request)
     
@@ -88,7 +107,15 @@ async def test_direct_api_render_blocked_returns_early(adapter, change_request):
     assert not render_output.snippets
 
 @pytest.mark.asyncio
-async def test_direct_api_render_no_network_calls(adapter, change_request):
-    # render should not make any HTTP calls
-    # verified by lack of httpx/requests imports in direct_api.py
+async def test_direct_api_render_does_not_reinterpret_plan_reason(adapter, change_request):
+    change_request.plan_decision.reason = "blocked by policy text that should be ignored by render"
+
+    render_output = await adapter.render(change_request)
+
+    assert render_output.snippets
+
+@pytest.mark.asyncio
+@patch("httpx.AsyncClient")
+async def test_direct_api_render_no_network_calls(mock_async_client, adapter, change_request):
     await adapter.render(change_request)
+    mock_async_client.assert_not_called()
