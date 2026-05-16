@@ -113,3 +113,22 @@ async def test_direct_api_apply_surfaces_api_errors(mock_post, adapter, base_met
     assert result.status == "failed"
     assert "Completed with 1 errors" in result.detail
     assert "Connection refused" in result.detail
+
+@pytest.mark.asyncio
+@patch("httpx.AsyncClient.post")
+async def test_direct_api_apply_does_not_reinterpret_render_summary(mock_post, adapter, base_meta, api_snippet):
+    from unittest.mock import MagicMock
+    mock_resp = AsyncMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_post.return_value = mock_resp
+
+    config_render = ConfigRender(
+        meta=base_meta,
+        summary="blocked/no_op text should not affect apply behavior",
+        snippets=[api_snippet]
+    )
+
+    result = await adapter.apply(config_render)
+
+    assert result.status == "success"
+    mock_post.assert_called_once()
