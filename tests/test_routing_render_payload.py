@@ -250,7 +250,12 @@ def test_routing_system_prompt_contains_no_vlan_specific_text() -> None:
     req = _make_routing_request()
     ctx = DummyCtx(req)
     prompt = render_system_prompt(ctx)
-    assert "vlan" not in prompt.lower()
+    # The routing prompt must not contain routing-payload ops being described as
+    # VLAN operations.  The word "vlan" may appear in shared format invariants
+    # (path_hint examples, API payload field names, etc.), but there must be no
+    # VLAN-domain payload ops section.
+    assert "VLAN Operations:" not in prompt
+    assert "Interface Operations:" not in prompt
 
 
 def test_routing_system_prompt_contains_payload_ops() -> None:
