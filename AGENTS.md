@@ -201,3 +201,45 @@ When helping in this repository:
 - Use LLM reasoning for interpretation, extraction, and planning support.
 - Ask for missing model definitions or sample data before guessing.
 - Suggest the smallest safe change that solves the problem.
+
+## Coding Agent Security and Best Practices
+
+### Secrets and credentials
+- Never hardcode credentials, tokens, API keys, or passwords in any file.
+- Use environment variables loaded via Pydantic Settings (`config.py`) for all sensitive values.
+- Do not add `.env` files to commits. Reference `.env.example` only.
+- Run secret scanning mentally before proposing any diff that touches config or fixture files.
+
+### Input validation
+- All external inputs (inventory data, LLM outputs, CLI arguments) must be validated
+  through a Pydantic model before use. Never pass raw dicts into downstream logic.
+- Treat LLM-generated content as untrusted until validated against the declared output schema.
+
+### No live execution
+- Do not add any code path that pushes config to a real device, even behind a flag.
+- The `execute` stage remains disabled. Any code reaching a network device is out of scope.
+
+### Dependency hygiene
+- Do not add new dependencies without declaring them in `pyproject.toml`.
+- Prefer packages already in the dependency tree. Flag any new addition explicitly in the PR.
+- Do not pin to versions with known CVEs.
+
+### Error handling
+- All file I/O (YAML loading, JSON reading, artifact writes) must handle missing files
+  with explicit, descriptive errors — not silent fallbacks or bare `except` blocks.
+- Domain resolution failures must raise, not return `None` or an empty default.
+
+### Type safety
+- All new functions must have full type annotations.
+- Do not use `Any` unless there is a documented justification in a comment.
+- Run `mypy` (already configured) before considering a change complete.
+
+### Test requirements
+- Every new function introduced must have at least one unit test.
+- Error paths (missing file, unsupported domain, empty payload) must be explicitly tested.
+- Do not use live Ollama calls in tests — mock model outputs at the adapter boundary.
+
+### Code style
+- Follow `ruff` formatting rules (already configured). Run `ruff check` before committing.
+- Keep functions focused and small. Prefer one responsibility per function.
+- Do not duplicate normalization or filtering logic — reuse existing helpers.
