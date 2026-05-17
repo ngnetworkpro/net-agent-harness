@@ -4,6 +4,7 @@ from pydantic_ai import RunContext
 from pydantic_ai.output import NativeOutput
 
 from ..agents.agent_factory import build_agent
+from ..orchestration.domain_loader import load_render_context
 
 change_render_agent = build_agent(
     deps_type=RenderRequest,
@@ -55,73 +56,57 @@ def render_system_prompt(ctx: RunContext[RenderRequest]) -> str:
     """Generate the system prompt dynamically using the resolved domain context."""
 
     deps = ctx.deps
-    payload_parts = []
-
-    if hasattr(deps.payload, 'vlan_ops') and deps.payload.vlan_ops:
-        payload_parts.append("VLAN Operations:")
-        for op in deps.payload.vlan_ops:
-            payload_parts.append(
-                "  - VLAN "
-                + str(op.vlan_id)
-                + ": name="
-                + str(op.vlan_name)
-                + ", operation="
-                + str(op.operation.value)
-                + ", target="
-                + str(op.target.name)
-            )
-
-    if hasattr(deps.payload, 'interface_ops') and deps.payload.interface_ops:
-        payload_parts.append("Interface Operations:")
-        for op in deps.payload.interface_ops:
-            mode = op.switchport_mode.value if op.switchport_mode else "unknown"
-            payload_parts.append(
-                "  - "
-                + str(op.interface_name)
-                + ": mode="
-                + mode
-                + ", access_vlan="
-                + str(op.access_vlan)
-                + ", target="
-                + str(op.target.name)
-            )
-
-    payload_section = "\n".join(payload_parts) if payload_parts else "No payload data received."
-
     domain_val = deps.domain.value
     intent_val = deps.intent_type
 
-    preamble_parts = [
-        "You are a network configuration rendering assistant specialized in VLAN operations.",
-        "You produce vendor-specific configuration from an approved planned change diff.",
-        "",
+    # Load per-domain render context from YAML.
+    render_context = load_render_context(domain_val)
+
+    # Build the payload description using describe_ops() when available.
+    if hasattr(deps.payload, "describe_ops"):
+        payload_lines = deps.payload.describe_ops()
+        payload_section = "\n".join(payload_lines) if payload_lines else "No payload data received."
+    else:
+        payload_section = "No payload data received."
+
+    parts: list[str] = []
+
+    # 1. Domain preamble (from YAML).
+    parts.append(render_context["preamble"].rstrip())
+    parts.append("")
+
+    # 2. Input Contract (shared invariant — dynamic domain/intent values).
+    parts += [
         "## Input Contract",
         "You receive a RenderRequest with:",
         "- domain: " + domain_val,
         "- intent_type: " + intent_val,
         "- payload: VlanRenderPayload or RoutingRenderPayload",
         "",
+    ]
+
+    # 3. Render Payload (dynamic, from payload.describe_ops()).
+    parts += [
         "## Render Payload",
         payload_section,
         "",
-        "## Critical Constraints",
-        "1. Do NOT re-call the planner or reinterpret the original request.",
-        "2. Only consume the payload fields above.",
-        "3. Render safe, reviewable candidate config only. Do not claim anything was executed.",
-        "4. Do not invent requirements not present in the payload (e.g., VLAN naming patterns, mandatory port assignments).",
-        "5. The summary field MUST be derived deterministically from the payload. Use this exact format:",
-        '   - For VLAN creation: "Rendered VLAN <id> (<name>) for <device> — <operation>"',
-        '   - For interface changes: "Rendered <mode> port <interface> on <device> — <operation>"',
-        '   - For mixed: "Rendered <N> VLAN(s) and <M> interface(s) for <devices>"',
-        '   Do NOT use placeholder text like "Awaiting Input" or "Render complete".',
-        "",
+    ]
+
+    # 4. Domain summary format rules (from YAML).
+    summary_rules = render_context["summary_format_rules"].strip()
+    if summary_rules:
+        parts.append(summary_rules)
+        parts.append("")
+
+    # 5. Output Format — REQUIRED (shared invariant).
+    parts += [
         "## Output Format — REQUIRED",
         "You MUST produce output with a summary string and non-empty snippets for every device in the payload.",
         "Each snippet represents a device's rendered configuration.",
         "",
         "For API-primary devices:",
         "Create a ConfigSnippet with:",
-        "   - device_name: the target device name",
+        '   - device_name: the target device name',
         '   - backend_type: "api"',
         '   - render_role: "primary"',
         '   - path_hint: endpoint or resource path hint (e.g., "/networks/{networkId}/vlans")',
@@ -138,24 +123,19 @@ def render_system_prompt(ctx: RunContext[RenderRequest]) -> str:
         "   - rendered_text: commands joined as readable text",
         "   - api_payload: null",
         "",
-        "Example Mist API payload snippet for VLAN 13:",
-        "- device_name: mist_sw1",
-        '- backend_type: "api"',
-        '- render_role: "primary"',
-        '- path_hint: "/sites/{site_id}/vlans"',
-        "- api_payload: {'vlan_id': 13, 'name': 'users3'}",
-        "- rendered_text: 'JSON preview of Mist VLAN 13 payload'",
-        "- commands: []",
-        "",
-        "Example Meraki API payload snippet for VLAN 13:",
-        "- device_name: meraki_sw1",
-        '- backend_type: "api"',
-        '- render_role: "primary"',
-        '- path_hint: "/networks/{networkId}/appliance/vlans"',
-        "- api_payload: {'id': 13, 'name': 'users3'}",
-        "- rendered_text: 'JSON preview of Meraki VLAN 13 payload'",
-        "- commands: []",
-        "",
+    ]
+
+    # 6. Domain snippet examples (from YAML, formatted as text).
+    for example in render_context["snippet_examples"]:
+        desc = example.get("description", "Example snippet")
+        parts.append(f"{desc}:")
+        for field, value in example.items():
+            if field != "description":
+                parts.append(f"- {field}: {value}")
+        parts.append("")
+
+    # 7. Shared invariants — API payload format, CLI commands, mode rules, warnings.
+    parts += [
         "## API Payload Format",
         "- The api_payload is the canonical field for API operations.",
         "- vlans: list of objects with id (int) and name (str)",
@@ -179,4 +159,4 @@ def render_system_prompt(ctx: RunContext[RenderRequest]) -> str:
         "- Do NOT warn about missing optional data (e.g., port assignments when only VLAN creation was requested)",
     ]
 
-    return "\n".join(preamble_parts)
+    return "\n".join(parts)
