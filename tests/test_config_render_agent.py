@@ -98,6 +98,22 @@ async def test_validator_rejects_empty_snippets_when_ops_present(mock_ctx):
     with pytest.raises(ValueError, match="Produce at least one ConfigSnippet"):
         await _enforce_snippets(mock_ctx, output)
 
+
+@pytest.mark.asyncio
+async def test_validator_bypasses_snippet_enforcement_when_no_ops_present():
+    req = RenderRequest(
+        domain=NetworkDomain.VLAN,
+        intent_type="set_access_vlan",
+        payload=VlanRenderPayload(),
+    )
+
+    class DummyCtx:
+        deps = req
+
+    output = ConfigRenderOutput(summary="Test", snippets=[])
+    result = await _enforce_snippets(DummyCtx(), output)
+    assert result == output
+
 @pytest.mark.asyncio
 async def test_validator_rejects_api_snippet_with_missing_payload(mock_ctx):
     output = ConfigRenderOutput(
