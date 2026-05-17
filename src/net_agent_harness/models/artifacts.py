@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Literal, Optional
+from typing import Literal, Optional, Protocol
 from enum import Enum
 from .common import ArtifactMeta
 from .enums import ValidationStatus, SwitchportMode, AllowedVlansMode, NetworkDomain, RenderBackendType, RenderRole
@@ -103,10 +103,56 @@ class VlanInterfaceRenderOp(BaseModel):
     allowed_vlans: list[int] = Field(default_factory=list)
     allowed_vlans_mode: AllowedVlansMode | None = None
 
+
+class RenderPayload(Protocol):
+    def has_ops(self) -> bool:
+        """Return True when payload contains at least one renderable operation."""
+
+    def describe_ops(self) -> list[str]:
+        """Return human-readable lines describing payload operations."""
+
+
 class VlanRenderPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     vlan_ops: list[VlanRenderOp] = Field(default_factory=list)
     interface_ops: list[VlanInterfaceRenderOp] = Field(default_factory=list)
+
+    def has_ops(self) -> bool:
+        return bool(self.vlan_ops or self.interface_ops)
+
+    def describe_ops(self) -> list[str]:
+        payload_parts: list[str] = []
+
+        if self.vlan_ops:
+            payload_parts.append("VLAN Operations:")
+            for op in self.vlan_ops:
+                payload_parts.append(
+                    "  - VLAN "
+                    + str(op.vlan_id)
+                    + ": name="
+                    + str(op.vlan_name)
+                    + ", operation="
+                    + str(op.operation.value)
+                    + ", target="
+                    + str(op.target.name)
+                )
+
+        if self.interface_ops:
+            payload_parts.append("Interface Operations:")
+            for op in self.interface_ops:
+                mode = op.switchport_mode.value if op.switchport_mode else "unknown"
+                payload_parts.append(
+                    "  - "
+                    + str(op.interface_name)
+                    + ": mode="
+                    + mode
+                    + ", access_vlan="
+                    + str(op.access_vlan)
+                    + ", target="
+                    + str(op.target.name)
+                )
+
+        return payload_parts
 
 class RoutingRenderPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
