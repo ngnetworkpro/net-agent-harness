@@ -6,7 +6,7 @@ from pydantic_ai.output import NativeOutput
 from ..agents.agent_factory import build_agent
 from ..orchestration.domain_loader import load_render_context
 
-SUPPORTED_RENDER_DOMAINS = {"vlan", "routing"}
+SUPPORTED_RENDER_DOMAINS = {"vlan"}
 
 change_render_agent = build_agent(
     deps_type=RenderRequest,
@@ -66,6 +66,13 @@ def render_system_prompt(ctx: RunContext[RenderRequest]) -> str:
     deps = ctx.deps
     domain_val = deps.domain.value
     intent_val = deps.intent_type
+
+    if domain_val not in SUPPORTED_RENDER_DOMAINS:
+        supported_domains = ", ".join(sorted(SUPPORTED_RENDER_DOMAINS))
+        raise ValueError(
+            f"Unsupported render domain '{domain_val}'. "
+            f"Supported render domains: {supported_domains}."
+        )
 
     # Load per-domain render context from YAML.
     render_context = load_render_context(domain_val)

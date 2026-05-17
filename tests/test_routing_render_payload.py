@@ -229,8 +229,8 @@ async def test_enforce_snippets_returns_early_when_no_routing_ops() -> None:
 
 # ── SUPPORTED_RENDER_DOMAINS ─────────────────────────────────────────────────
 
-def test_routing_in_supported_render_domains() -> None:
-    assert "routing" in SUPPORTED_RENDER_DOMAINS
+def test_routing_not_in_supported_render_domains() -> None:
+    assert "routing" not in SUPPORTED_RENDER_DOMAINS
 
 
 def test_vlan_in_supported_render_domains() -> None:
@@ -239,28 +239,18 @@ def test_vlan_in_supported_render_domains() -> None:
 
 # ── System prompt content ────────────────────────────────────────────────────
 
-def test_routing_system_prompt_contains_routing_text() -> None:
+def test_routing_system_prompt_rejects_unsupported_domain_with_clear_error() -> None:
     req = _make_routing_request()
     ctx = DummyCtx(req)
-    prompt = render_system_prompt(ctx)
-    assert "routing" in prompt.lower()
+    with pytest.raises(ValueError) as exc_info:
+        render_system_prompt(ctx)
+    assert "Unsupported render domain 'routing'" in str(exc_info.value)
+    assert "Supported render domains: vlan." in str(exc_info.value)
 
 
-def test_routing_system_prompt_contains_no_vlan_specific_text() -> None:
+def test_routing_system_prompt_rejects_even_with_empty_payload() -> None:
     req = _make_routing_request()
+    req.payload = RoutingRenderPayload(route_ops=[])
     ctx = DummyCtx(req)
-    prompt = render_system_prompt(ctx)
-    # The routing prompt must not contain routing-payload ops being described as
-    # VLAN operations.  The word "vlan" may appear in shared format invariants
-    # (path_hint examples, API payload field names, etc.), but there must be no
-    # VLAN-domain payload ops section.
-    assert "VLAN Operations:" not in prompt
-    assert "Interface Operations:" not in prompt
-
-
-def test_routing_system_prompt_contains_payload_ops() -> None:
-    req = _make_routing_request()
-    ctx = DummyCtx(req)
-    prompt = render_system_prompt(ctx)
-    assert "10.10.10.0/24" in prompt
-    assert "192.168.1.1" in prompt
+    with pytest.raises(ValueError, match="Unsupported render domain 'routing'"):
+        render_system_prompt(ctx)
