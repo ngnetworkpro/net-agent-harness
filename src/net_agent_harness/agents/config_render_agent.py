@@ -1,4 +1,5 @@
 from ..models.artifacts import ConfigRenderOutput, RenderRequest
+from ..models.enums import RenderBackendType, RenderRole
 from pydantic_ai import RunContext
 from pydantic_ai.output import NativeOutput
 
@@ -16,15 +17,37 @@ async def _enforce_snippets(
 ) -> ConfigRenderOutput:
     """Enforce that snippets are generated when payload contains operations."""
     deps = ctx.deps
-    has_vlan_ops = hasattr(deps.payload, 'vlan_ops') and deps.payload.vlan_ops
-    has_interface_ops = hasattr(deps.payload, 'interface_ops') and deps.payload.interface_ops
+    has_vlan_ops = hasattr(deps.payload, "vlan_ops") and deps.payload.vlan_ops
+    has_interface_ops = hasattr(deps.payload, "interface_ops") and deps.payload.interface_ops
 
-    if (has_vlan_ops or has_interface_ops) and not output.snippets:
+    if not (has_vlan_ops or has_interface_ops):
+        return output
+
+    if not output.snippets:
         raise ValueError(
             f"RenderRequest contains operations but no snippets were generated. "
             f"vlan_ops={has_vlan_ops}, interface_ops={has_interface_ops}. "
-            f"You MUST produce at least one ConfigSnippet per device with rendered commands."
+            f"Produce at least one ConfigSnippet per device."
         )
+
+    for snippet in output.snippets:
+        is_api_primary = (
+            snippet.backend_type == RenderBackendType.API
+            and snippet.render_role == RenderRole.PRIMARY
+        )
+        is_cli_fallback = (
+            snippet.backend_type == RenderBackendType.CLI
+        )
+        if is_api_primary and not snippet.api_payload:
+            raise ValueError(
+                f"API-primary snippet for device '{snippet.device_name}' "
+                f"must have a non-empty api_payload."
+            )
+        if is_cli_fallback and not snippet.commands:
+            raise ValueError(
+                f"CLI fallback snippet for device '{snippet.device_name}' "
+                f"must have non-empty commands."
+            )
 
     return output
 
@@ -98,28 +121,54 @@ def render_system_prompt(ctx: RunContext[RenderRequest]) -> str:
         "You MUST produce output with a summary string and non-empty snippets for every device in the payload.",
         "Each snippet represents a device's rendered configuration.",
         "",
-        "For each device in the payload:",
-        "1. Create a ConfigSnippet with:",
+        "For API-primary devices:",
+        "Create a ConfigSnippet with:",
         "   - device_name: the target device name",
-        "   - rendered_text: API payload structure (JSON string)",
-        "   - commands: list of CLI commands (strings)",
+        '   - backend_type: "api"',
+        '   - render_role: "primary"',
+        '   - path_hint: endpoint or resource path hint (e.g., "/networks/{networkId}/vlans")',
+        "   - api_payload: structured dict with the full API request body",
+        "   - rendered_text: human-readable JSON preview of the API call",
+        "   - commands: [] (empty — CLI commands do not belong in an API-primary snippet)",
         "",
-        "Example for VLAN 13 on sw1:",
-        "- device_name: sw1",
-        "- rendered_text: use json structure with vlans array containing id and name",
-        "- commands: [vlan 13, name users3]",
+        "For CLI-fallback snippets (emitted alongside the primary when applicable):",
+        "Create a second ConfigSnippet with:",
+        "   - device_name: same device name",
+        '   - backend_type: "cli"',
+        '   - render_role: "fallback"',
+        "   - commands: ordered list of vendor-appropriate CLI commands",
+        "   - rendered_text: commands joined as readable text",
+        "   - api_payload: null",
+        "",
+        "Example Mist API payload snippet for VLAN 13:",
+        "- device_name: mist_sw1",
+        '- backend_type: "api"',
+        '- render_role: "primary"',
+        '- path_hint: "/sites/{site_id}/vlans"',
+        "- api_payload: {'vlan_id': 13, 'name': 'users3'}",
+        "- rendered_text: 'JSON preview of Mist VLAN 13 payload'",
+        "- commands: []",
+        "",
+        "Example Meraki API payload snippet for VLAN 13:",
+        "- device_name: meraki_sw1",
+        '- backend_type: "api"',
+        '- render_role: "primary"',
+        '- path_hint: "/networks/{networkId}/appliance/vlans"',
+        "- api_payload: {'id': 13, 'name': 'users3'}",
+        "- rendered_text: 'JSON preview of Meraki VLAN 13 payload'",
+        "- commands: []",
         "",
         "## API Payload Format",
+        "- The api_payload is the canonical field for API operations.",
         "- vlans: list of objects with id (int) and name (str)",
         "- port_configs: list of objects with port, mode, access_vlan, native_vlan, allowed_vlans_mode",
         "",
         "## CLI Commands",
-        "- Produce CLI commands in the `commands` list for each ConfigSnippet.",
+        "- Produce CLI commands in the `commands` list for each CLI-fallback ConfigSnippet.",
         "- Use the command syntax appropriate for the target device's vendor/platform.",
         "- Do NOT invent CLI syntax. Use only the operations described in the payload.",
         "- For VLAN creation: include commands that create the VLAN and set its name.",
         "- For interface changes: include commands that set the switchport mode and VLAN membership.",
-        "- The orchestration layer will validate and may replace these commands with deterministic vendor-specific output.",
         "",
         "## allowed_vlans_mode Rule",
         "For trunk ports, always use allowed_vlans_mode=all in API payloads.",

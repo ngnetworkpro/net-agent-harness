@@ -7,7 +7,6 @@ Covers:
 - end-to-end evaluation producing a normalized diff
 """
 
-import pytest
 from net_agent_harness.models.changes import (
     DeviceChange,
     VlanChange,

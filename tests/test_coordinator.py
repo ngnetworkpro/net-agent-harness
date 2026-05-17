@@ -155,6 +155,52 @@ async def test_stage_coordinator_rejects_render_without_apply(tmp_path):
     with pytest.raises(ValueError, match="Render rejected"):
         await coordinator.render(change_request)
 
+@pytest.mark.asyncio
+async def test_stage_coordinator_rejects_blocked_render_without_apply(tmp_path):
+    store = ArtifactStore(tmp_path)
+    coordinator = StageCoordinator(store)
+    change_request = ChangeRequest(
+        meta=ArtifactMeta(run_id="run-1", artifact_id="change-1", created_by="test"),
+        domain=NetworkDomain.VLAN,
+        scope=ScopeRef(site="HQ", device_names=["sw1"]),
+        requested_change=RequestedChange(
+            summary="Blocked check",
+            requested_by="tester",
+            intent="Blocked",
+        ),
+        target_scope="device",
+        rollback_plan=RollbackPlan(summary="Revert"),
+        risk=ChangeRisk.LOW,
+        plan_decision=PlanDecision(decision=PlanDecisionType.BLOCKED, reason="missing data", diff=[]),
+    )
+
+    with pytest.raises(ValueError, match="Render rejected"):
+        await coordinator.render(change_request)
+
+@pytest.mark.asyncio
+@patch.object(StageCoordinator, "execute", new_callable=AsyncMock)
+async def test_stage_coordinator_pipeline_noop_never_calls_execute(mock_execute, tmp_path):
+    store = ArtifactStore(tmp_path)
+    coordinator = StageCoordinator(store)
+    change_request = ChangeRequest(
+        meta=ArtifactMeta(run_id="run-1", artifact_id="change-1", created_by="test"),
+        domain=NetworkDomain.VLAN,
+        scope=ScopeRef(site="HQ", device_names=["sw1"]),
+        requested_change=RequestedChange(
+            summary="No-op check",
+            requested_by="tester",
+            intent="No-op",
+        ),
+        target_scope="device",
+        rollback_plan=RollbackPlan(summary="Revert"),
+        risk=ChangeRisk.LOW,
+        plan_decision=PlanDecision(decision=PlanDecisionType.NO_OP, reason="already done", diff=[]),
+    )
+
+    with pytest.raises(ValueError, match="Render rejected"):
+        await coordinator.run_pipeline(change_request)
+    mock_execute.assert_not_called()
+
 
 @pytest.mark.asyncio
 async def test_stage_coordinator_validates_platform_constraints_per_device(tmp_path, monkeypatch):

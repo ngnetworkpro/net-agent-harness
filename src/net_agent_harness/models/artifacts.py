@@ -6,13 +6,40 @@ from .enums import ValidationStatus, SwitchportMode, AllowedVlansMode, NetworkDo
 from .changes import VlanSpec, PortSpec
 
 
+class ApiRequestPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
+    path: str
+    body: dict | None = None
+    query: dict[str, str] = Field(default_factory=dict)
+    vendor_context: dict[str, str] = Field(default_factory=dict)
+
+
 class ConfigSnippet(BaseModel):
+    """A configuration snippet for a target device.
+    
+    API-primary snippet (render_role=PRIMARY, backend_type=API):
+    - api_payload: required typed API request payload
+    - rendered_text: required, human-readable preview of the API call
+    - path_hint: optional, endpoint or resource path hint for the reviewer
+    - commands: must be empty list; CLI data does not belong here
+
+    CLI-fallback snippet (render_role=FALLBACK, backend_type=CLI):
+    - commands: required, non-empty list of vendor-specific CLI commands
+    - rendered_text: required, human-readable text joining the commands
+    - api_payload: must be None; API data does not belong here
+
+    Mixed output (API-capable device):
+    A single device should emit one PRIMARY API snippet plus one FALLBACK CLI snippet
+    as two separate ConfigSnippet entries in the ConfigRender.snippets list.
+    They share device_name.
+    """
     model_config = ConfigDict(extra="forbid")
     device_name: str
     backend_type: RenderBackendType | None = None
     render_role: RenderRole | None = None
     path_hint: str | None = None
-    api_payload: dict | None = None
+    api_payload: ApiRequestPayload | None = None
     commands: list[str] = Field(default_factory=list)
     rendered_text: str | None = None
 
