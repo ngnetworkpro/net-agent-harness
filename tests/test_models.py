@@ -1,7 +1,13 @@
 import pytest
 from pydantic import ValidationError
 
-from net_agent_harness.models.artifacts import Finding
+from net_agent_harness.models.artifacts import (
+    Finding,
+    OperationType,
+    RenderTarget,
+    VlanRenderOp,
+    VlanRenderPayload,
+)
 from net_agent_harness.models.changes import ChangeRequest, RequestedChange, RollbackPlan
 from net_agent_harness.models.common import ArtifactMeta, ScopeRef
 from net_agent_harness.models.enums import ChangeRisk, NetworkDomain
@@ -88,3 +94,29 @@ def test_requested_change_prefers_vlan_desired_state_model():
 def test_finding_severity_is_constrained():
     with pytest.raises(ValidationError):
         Finding(code="X", severity="urgent", message="bad")
+
+
+def test_vlan_render_payload_has_ops_and_describe_ops_with_operations():
+    payload = VlanRenderPayload(
+        vlan_ops=[
+            VlanRenderOp(
+                target=RenderTarget(name="sw1"),
+                vlan_id=10,
+                operation=OperationType.ENSURE_PRESENT,
+                vlan_name="users",
+            )
+        ]
+    )
+
+    assert payload.has_ops() is True
+    assert payload.describe_ops() == [
+        "VLAN Operations:",
+        "  - VLAN 10: name=users, operation=ensure_present, target=sw1",
+    ]
+
+
+def test_vlan_render_payload_has_ops_and_describe_ops_without_operations():
+    payload = VlanRenderPayload()
+
+    assert payload.has_ops() is False
+    assert payload.describe_ops() == []
