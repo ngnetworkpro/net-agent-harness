@@ -111,6 +111,9 @@ class RenderPayload(Protocol):
     def describe_ops(self) -> list[str]:
         """Return human-readable lines describing payload operations."""
 
+    def validate_snippets(self, snippets: list) -> list[str]:
+        """Run domain-specific validation on rendered snippets; return error strings."""
+
 
 class VlanRenderPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -154,10 +157,62 @@ class VlanRenderPayload(BaseModel):
 
         return payload_parts
 
+    def validate_snippets(self, snippets: list) -> list[str]:
+        return []
+
+
+class StaticRouteOp(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    prefix: str
+    next_hop: str
+    operation: OperationType
+    target: RenderTarget
+    description: Optional[str] = None
+    admin_distance: Optional[int] = None
+
+
 class RoutingRenderPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    prefixes: list[str] = Field(default_factory=list)
-    next_hop: str | None = None
+    route_ops: list[StaticRouteOp] = Field(default_factory=list)
+
+    def has_ops(self) -> bool:
+        return bool(self.route_ops)
+
+    def describe_ops(self) -> list[str]:
+        payload_parts: list[str] = []
+        if self.route_ops:
+            payload_parts.append("Route Operations:")
+            for op in self.route_ops:
+                payload_parts.append(
+                    "  - "
+                    + op.prefix
+                    + " via "
+                    + op.next_hop
+                    + ": operation="
+                    + op.operation.value
+                    + ", target="
+                    + op.target.name
+                )
+        return payload_parts
+
+    def validate_snippets(self, snippets: list) -> list[str]:
+        """Verify each API-primary snippet for a route op includes next_hop in api_payload."""
+        errors: list[str] = []
+        for snippet in snippets:
+            is_api_primary = (
+                snippet.backend_type is not None
+                and snippet.backend_type.value == "api"
+                and snippet.render_role is not None
+                and snippet.render_role.value == "primary"
+            )
+            if is_api_primary:
+                body = snippet.api_payload.body if snippet.api_payload else None
+                if not body or "next_hop" not in body:
+                    errors.append(
+                        f"API-primary snippet for device '{snippet.device_name}' "
+                        f"is missing 'next_hop' in api_payload."
+                    )
+        return errors
 
 class RenderRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")

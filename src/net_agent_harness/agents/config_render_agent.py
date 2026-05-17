@@ -6,6 +6,8 @@ from pydantic_ai.output import NativeOutput
 from ..agents.agent_factory import build_agent
 from ..orchestration.domain_loader import load_render_context
 
+SUPPORTED_RENDER_DOMAINS = {"vlan", "routing"}
+
 change_render_agent = build_agent(
     deps_type=RenderRequest,
     output_type=NativeOutput(ConfigRenderOutput),
@@ -48,6 +50,12 @@ async def _enforce_snippets(
                 f"must have non-empty commands."
             )
 
+    domain_errors = deps.payload.validate_snippets(output.snippets)
+    if domain_errors:
+        raise ValueError(
+            "Domain-specific snippet validation failed: " + "; ".join(domain_errors)
+        )
+
     return output
 
 
@@ -81,7 +89,6 @@ def render_system_prompt(ctx: RunContext[RenderRequest]) -> str:
         "You receive a RenderRequest with:",
         "- domain: " + domain_val,
         "- intent_type: " + intent_val,
-        "- payload: VlanRenderPayload or RoutingRenderPayload",
         "",
     ]
 
@@ -155,8 +162,8 @@ def render_system_prompt(ctx: RunContext[RenderRequest]) -> str:
         "## Warnings Policy",
         "Only include warnings when:",
         "- There is a real ambiguity in the payload that affects rendering",
-        "- A planned VLAN/interface could not be rendered due to missing data",
-        "- Do NOT warn about missing optional data (e.g., port assignments when only VLAN creation was requested)",
+        "- A planned operation could not be rendered due to missing data",
+        "- Do NOT warn about missing optional data",
     ]
 
     return "\n".join(parts)

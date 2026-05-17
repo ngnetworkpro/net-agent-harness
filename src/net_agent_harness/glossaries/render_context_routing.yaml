@@ -17,6 +17,35 @@ preamble: |
   3. Render safe, reviewable candidate config only. Do not claim anything was executed.
   4. Do not invent requirements not present in the payload.
 
+  ## Output Format — REQUIRED
+  You MUST produce output with a summary string and non-empty snippets for every device in the payload.
+  Each snippet represents a device's rendered configuration.
+
+  For API-primary devices:
+  Create a ConfigSnippet with:
+     - device_name: the target device name
+     - backend_type: "api"
+     - render_role: "primary"
+     - path_hint: endpoint or resource path hint (e.g., "/networks/{networkId}/staticRoutes")
+     - api_payload: structured dict with the full API request body, MUST include next_hop
+     - rendered_text: human-readable JSON preview of the API call
+     - commands: [] (empty — CLI commands do not belong in an API-primary snippet)
+
+  For CLI-fallback snippets (emitted alongside the primary when applicable):
+  Create a second ConfigSnippet with:
+     - device_name: same device name
+     - backend_type: "cli"
+     - render_role: "fallback"
+     - commands: ordered list of vendor-appropriate CLI commands
+     - rendered_text: commands joined as readable text
+     - api_payload: null
+
+  ## Warnings Policy
+  Only include warnings when:
+  - There is a real ambiguity in the payload that affects rendering
+  - A planned route could not be rendered due to missing data
+  - Do NOT warn about missing optional data
+
 summary_format_rules: |
   The summary field MUST be derived deterministically from the payload. Use this exact format:
   - For static route addition: "Rendered static route to <prefix> via <next_hop> on <device>"
@@ -24,4 +53,25 @@ summary_format_rules: |
   - For multiple routes: "Rendered <N> route(s) on <device>"
   Do NOT use placeholder text like "Awaiting Input" or "Render complete".
 
-snippet_examples: []
+snippet_examples:
+  - description: "Example Meraki API payload for adding a static route"
+    device_name: "meraki_router1"
+    backend_type: "api"
+    render_role: "primary"
+    path_hint: "/networks/{networkId}/appliance/staticRoutes"
+    api_payload:
+      name: "branch-office"
+      subnet: "10.10.10.0/24"
+      next_hop: "192.168.1.1"
+    rendered_text: "POST /networks/{networkId}/appliance/staticRoutes — add static route 10.10.10.0/24 via 192.168.1.1"
+    commands: []
+
+  - description: "Example CLI fallback for adding a static route on a Cisco IOS device"
+    device_name: "cisco_router1"
+    backend_type: "cli"
+    render_role: "fallback"
+    path_hint: null
+    api_payload: null
+    rendered_text: "ip route 10.10.10.0 255.255.255.0 192.168.1.1"
+    commands:
+      - "ip route 10.10.10.0 255.255.255.0 192.168.1.1"
