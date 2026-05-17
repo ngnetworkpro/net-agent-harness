@@ -17,16 +17,14 @@ async def _enforce_snippets(
 ) -> ConfigRenderOutput:
     """Enforce that snippets are generated when payload contains operations."""
     deps = ctx.deps
-    has_vlan_ops = hasattr(deps.payload, "vlan_ops") and deps.payload.vlan_ops
-    has_interface_ops = hasattr(deps.payload, "interface_ops") and deps.payload.interface_ops
-
-    if not (has_vlan_ops or has_interface_ops):
+    has_ops = deps.payload.has_ops()
+    if not has_ops:
         return output
 
     if not output.snippets:
         raise ValueError(
             f"RenderRequest contains operations but no snippets were generated. "
-            f"vlan_ops={has_vlan_ops}, interface_ops={has_interface_ops}. "
+            f"has_ops={has_ops}. "
             f"Produce at least one ConfigSnippet per device."
         )
 
