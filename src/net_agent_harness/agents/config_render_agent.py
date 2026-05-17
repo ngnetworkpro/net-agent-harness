@@ -6,7 +6,7 @@ from pydantic_ai.output import NativeOutput
 from ..agents.agent_factory import build_agent
 from ..orchestration.domain_loader import load_render_context
 
-SUPPORTED_RENDER_DOMAINS = {"vlan"}
+SUPPORTED_RENDER_DOMAINS = {"vlan", "routing"}
 
 change_render_agent = build_agent(
     deps_type=RenderRequest,
@@ -148,23 +148,42 @@ def render_system_prompt(ctx: RunContext[RenderRequest]) -> str:
                 parts.append(f"- {field}: {value}")
         parts.append("")
 
-    # 7. Shared invariants — API payload format, CLI commands, mode rules, warnings.
+    # 7. Shared + domain-specific invariants.
     parts += [
         "## API Payload Format",
         "- The api_payload is the canonical field for API operations.",
-        "- vlans: list of objects with id (int) and name (str)",
-        "- port_configs: list of objects with port, mode, access_vlan, native_vlan, allowed_vlans_mode",
+    ]
+    if domain_val == "vlan":
+        parts += [
+            "- vlans: list of objects with id (int) and name (str)",
+            "- port_configs: list of objects with port, mode, access_vlan, native_vlan, allowed_vlans_mode",
+            "",
+            "## allowed_vlans_mode Rule",
+            "For trunk ports, always use allowed_vlans_mode=all in API payloads.",
+            "Never expand VLANs numerically (e.g., do not use 1-4094).",
+        ]
+    elif domain_val == "routing":
+        parts += [
+            "- routes: list of route operations with prefix, next_hop, and operation",
+            "- Every API route operation must include next_hop.",
+        ]
+    parts += [
         "",
         "## CLI Commands",
         "- Produce CLI commands in the `commands` list for each CLI-fallback ConfigSnippet.",
         "- Use the command syntax appropriate for the target device's vendor/platform.",
         "- Do NOT invent CLI syntax. Use only the operations described in the payload.",
-        "- For VLAN creation: include commands that create the VLAN and set its name.",
-        "- For interface changes: include commands that set the switchport mode and VLAN membership.",
-        "",
-        "## allowed_vlans_mode Rule",
-        "For trunk ports, always use allowed_vlans_mode=all in API payloads.",
-        "Never expand VLANs numerically (e.g., do not use 1-4094).",
+    ]
+    if domain_val == "vlan":
+        parts += [
+            "- For VLAN creation: include commands that create the VLAN and set its name.",
+            "- For interface changes: include commands that set the switchport mode and VLAN membership.",
+        ]
+    elif domain_val == "routing":
+        parts += [
+            "- For static routes: include commands that configure the destination prefix and next-hop.",
+        ]
+    parts += [
         "",
         "## Warnings Policy",
         "Only include warnings when:",

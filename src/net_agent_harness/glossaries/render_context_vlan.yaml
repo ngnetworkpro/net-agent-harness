@@ -9,7 +9,7 @@ preamble: |
   You receive a RenderRequest with:
   - domain: vlan
   - intent_type: <intent>
-  - payload: VlanRenderPayload or RoutingRenderPayload
+  - payload: VlanRenderPayload
 
   ## Critical Constraints
   1. Do NOT re-call the planner or reinterpret the original request.

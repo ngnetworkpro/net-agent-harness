@@ -2,7 +2,7 @@ import pytest
 from net_agent_harness.agents.config_render_agent import _enforce_snippets, render_system_prompt
 from unittest.mock import patch
 from pydantic import ValidationError
-from net_agent_harness.models.artifacts import ApiRequestPayload, ConfigRenderOutput, ConfigSnippet, RenderRequest, RoutingRenderPayload, VlanRenderPayload, VlanRenderOp, RenderTarget
+from net_agent_harness.models.artifacts import ApiRequestPayload, ConfigRenderOutput, ConfigSnippet, RenderRequest, VlanRenderPayload, VlanRenderOp, RenderTarget
 from net_agent_harness.models.artifacts import OperationType
 from net_agent_harness.models.enums import NetworkDomain, RenderBackendType, RenderRole
 
@@ -206,9 +206,9 @@ def test_render_system_prompt_allows_supported_vlan_domain(mock_ctx):
 
 def test_render_system_prompt_rejects_unsupported_domain():
     req = RenderRequest(
-        domain=NetworkDomain.ROUTING,
-        intent_type="ensure_static_route",
-        payload=RoutingRenderPayload(),
+        domain=NetworkDomain.ACL,
+        intent_type="deny_any_any",
+        payload=VlanRenderPayload(),
     )
 
     class DummyCtx:
@@ -217,5 +217,5 @@ def test_render_system_prompt_rejects_unsupported_domain():
     with pytest.raises(ValueError) as exc_info:
         render_system_prompt(DummyCtx())
 
-    assert "Unsupported render domain 'routing'" in str(exc_info.value)
-    assert "Supported render domains: vlan." in str(exc_info.value)
+    assert "Unsupported render domain 'acl'" in str(exc_info.value)
+    assert "Supported render domains: routing, vlan." in str(exc_info.value)
