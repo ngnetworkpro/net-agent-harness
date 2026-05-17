@@ -111,8 +111,9 @@ class RenderPayload(Protocol):
     def describe_ops(self) -> list[str]:
         """Return human-readable lines describing payload operations."""
 
-    def validate_snippets(self, snippets: list) -> list[str]:
+    def validate_snippets(self, snippets: list[ConfigSnippet]) -> list[str]:
         """Run domain-specific validation on rendered snippets; return error strings."""
+        return []
 
 
 class VlanRenderPayload(BaseModel):
@@ -157,7 +158,7 @@ class VlanRenderPayload(BaseModel):
 
         return payload_parts
 
-    def validate_snippets(self, snippets: list) -> list[str]:
+    def validate_snippets(self, snippets: list[ConfigSnippet]) -> list[str]:
         return []
 
 
@@ -195,7 +196,7 @@ class RoutingRenderPayload(BaseModel):
                 )
         return payload_parts
 
-    def validate_snippets(self, snippets: list) -> list[str]:
+    def validate_snippets(self, snippets: list[ConfigSnippet]) -> list[str]:
         """Verify each API-primary snippet for a route op includes next_hop in api_payload."""
         errors: list[str] = []
         for snippet in snippets:
