@@ -229,8 +229,8 @@ async def test_enforce_snippets_returns_early_when_no_routing_ops() -> None:
 
 # ── SUPPORTED_RENDER_DOMAINS ─────────────────────────────────────────────────
 
-def test_routing_not_in_supported_render_domains() -> None:
-    assert "routing" not in SUPPORTED_RENDER_DOMAINS
+def test_routing_in_supported_render_domains() -> None:
+    assert "routing" in SUPPORTED_RENDER_DOMAINS
 
 
 def test_vlan_in_supported_render_domains() -> None:
@@ -239,18 +239,17 @@ def test_vlan_in_supported_render_domains() -> None:
 
 # ── System prompt content ────────────────────────────────────────────────────
 
-def test_routing_system_prompt_rejects_unsupported_domain_with_clear_error() -> None:
+def test_routing_system_prompt_contains_routing_preamble() -> None:
     req = _make_routing_request()
     ctx = DummyCtx(req)
-    with pytest.raises(ValueError) as exc_info:
-        render_system_prompt(ctx)
-    assert "Unsupported render domain 'routing'" in str(exc_info.value)
-    assert "Supported render domains: vlan." in str(exc_info.value)
+    prompt = render_system_prompt(ctx)
+    assert "specialized in routing operations" in prompt
+    assert "specialized in VLAN operations" not in prompt
 
 
-def test_routing_system_prompt_rejects_even_with_empty_payload() -> None:
+def test_routing_system_prompt_handles_empty_payload() -> None:
     req = _make_routing_request()
     req.payload = RoutingRenderPayload(route_ops=[])
     ctx = DummyCtx(req)
-    with pytest.raises(ValueError, match="Unsupported render domain 'routing'"):
-        render_system_prompt(ctx)
+    prompt = render_system_prompt(ctx)
+    assert "No payload data received." in prompt
