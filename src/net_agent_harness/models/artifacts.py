@@ -113,7 +113,7 @@ class RenderPayload(Protocol):
 
     def validate_snippets(self, snippets: list[ConfigSnippet]) -> list[str]:
         """Run domain-specific validation on rendered snippets; return error strings."""
-        return []
+        ...
 
 
 class VlanRenderPayload(BaseModel):
@@ -130,11 +130,11 @@ class VlanRenderPayload(BaseModel):
         if self.vlan_ops:
             payload_parts.append("VLAN Operations:")
             for op in self.vlan_ops:
+                name_part = f", name={op.vlan_name}" if op.vlan_name is not None else ""
                 payload_parts.append(
                     "  - VLAN "
                     + str(op.vlan_id)
-                    + ": name="
-                    + str(op.vlan_name)
+                    + name_part
                     + ", operation="
                     + str(op.operation.value)
                     + ", target="
@@ -145,13 +145,13 @@ class VlanRenderPayload(BaseModel):
             payload_parts.append("Interface Operations:")
             for op in self.interface_ops:
                 mode = op.switchport_mode.value if op.switchport_mode else "unknown"
+                access_part = f", access_vlan={op.access_vlan}" if op.access_vlan is not None else ""
                 payload_parts.append(
                     "  - "
                     + str(op.interface_name)
                     + ": mode="
                     + mode
-                    + ", access_vlan="
-                    + str(op.access_vlan)
+                    + access_part
                     + ", target="
                     + str(op.target.name)
                 )
@@ -208,10 +208,15 @@ class RoutingRenderPayload(BaseModel):
             )
             if is_api_primary:
                 body = snippet.api_payload.body if snippet.api_payload else None
-                if not body or "next_hop" not in body:
+                if body is None:
                     errors.append(
                         f"API-primary snippet for device '{snippet.device_name}' "
-                        f"is missing 'next_hop' in api_payload."
+                        f"has no api_payload.body (next_hop is required)."
+                    )
+                elif "next_hop" not in body:
+                    errors.append(
+                        f"API-primary snippet for device '{snippet.device_name}' "
+                        f"is missing 'next_hop' in api_payload.body."
                     )
         return errors
 

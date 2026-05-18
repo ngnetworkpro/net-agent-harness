@@ -2,11 +2,27 @@ from ..models.artifacts import ConfigRenderOutput, RenderRequest
 from ..models.enums import RenderBackendType, RenderRole
 from pydantic_ai import RunContext
 from pydantic_ai.output import NativeOutput
+import importlib.resources
+import json
+import re
 
 from ..agents.agent_factory import build_agent
 from ..orchestration.domain_loader import load_render_context
 
-SUPPORTED_RENDER_DOMAINS = {"vlan", "routing"}
+
+def _discover_render_domains() -> frozenset[str]:
+    """Derive supported render domains from render_context_*.yaml files in glossaries."""
+    pkg = importlib.resources.files("net_agent_harness.glossaries")
+    pattern = re.compile(r"^render_context_(.+)\.yaml$")
+    domains: set[str] = set()
+    for item in pkg.iterdir():
+        match = pattern.match(item.name)
+        if match:
+            domains.add(match.group(1))
+    return frozenset(domains)
+
+
+SUPPORTED_RENDER_DOMAINS: frozenset[str] = _discover_render_domains()
 
 change_render_agent = build_agent(
     deps_type=RenderRequest,
@@ -77,12 +93,9 @@ def render_system_prompt(ctx: RunContext[RenderRequest]) -> str:
     # Load per-domain render context from YAML.
     render_context = load_render_context(domain_val)
 
-    # Build the payload description using describe_ops() when available.
-    if hasattr(deps.payload, "describe_ops"):
-        payload_lines = deps.payload.describe_ops()
-        payload_section = "\n".join(payload_lines) if payload_lines else "No payload data received."
-    else:
-        payload_section = "No payload data received."
+    # Build the payload description using describe_ops().
+    payload_lines = deps.payload.describe_ops()
+    payload_section = "\n".join(payload_lines) if payload_lines else "No payload data received."
 
     parts: list[str] = []
 
@@ -145,7 +158,10 @@ def render_system_prompt(ctx: RunContext[RenderRequest]) -> str:
         parts.append(f"{desc}:")
         for field, value in example.items():
             if field != "description":
-                parts.append(f"- {field}: {value}")
+                if isinstance(value, (dict, list)):
+                    parts.append(f"- {field}: {json.dumps(value)}")
+                else:
+                    parts.append(f"- {field}: {value}")
         parts.append("")
 
     # 7. Shared + domain-specific invariants.

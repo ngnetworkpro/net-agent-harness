@@ -111,7 +111,7 @@ def test_vlan_render_payload_has_ops_and_describe_ops_with_operations():
     assert payload.has_ops() is True
     assert payload.describe_ops() == [
         "VLAN Operations:",
-        "  - VLAN 10: name=users, operation=ensure_present, target=sw1",
+        "  - VLAN 10, name=users, operation=ensure_present, target=sw1",
     ]
 
 

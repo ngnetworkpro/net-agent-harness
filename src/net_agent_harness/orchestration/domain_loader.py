@@ -1,6 +1,7 @@
 import copy
 from functools import lru_cache
 import importlib.resources
+from typing import Any
 import yaml
 from ..models.domain import DomainContext, TermEntry, IntentSpec, FewShotExample
 from ..models.enums import NetworkDomain
@@ -47,7 +48,8 @@ def load_domain_context(domain: NetworkDomain) -> DomainContext:
     return copy.deepcopy(_load_domain_context_cached(domain))
 
 
-def load_render_context(domain: str) -> dict:
+@lru_cache(maxsize=16)
+def load_render_context(domain: str) -> dict[str, Any]:
     """Load the render context YAML for the given domain name.
 
     Locates ``glossaries/render_context_{domain}.yaml`` and returns its
