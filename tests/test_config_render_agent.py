@@ -1,5 +1,6 @@
 import pytest
-from net_agent_harness.agents.config_render_agent import _enforce_snippets
+from net_agent_harness.agents.config_render_agent import _enforce_snippets, render_system_prompt
+from unittest.mock import patch
 from pydantic import ValidationError
 from net_agent_harness.models.artifacts import ApiRequestPayload, ConfigRenderOutput, ConfigSnippet, RenderRequest, VlanRenderPayload, VlanRenderOp, RenderTarget
 from net_agent_harness.models.artifacts import OperationType
@@ -98,6 +99,22 @@ async def test_validator_rejects_empty_snippets_when_ops_present(mock_ctx):
     with pytest.raises(ValueError, match="Produce at least one ConfigSnippet"):
         await _enforce_snippets(mock_ctx, output)
 
+
+@pytest.mark.asyncio
+async def test_validator_bypasses_snippet_enforcement_when_no_ops_present():
+    req = RenderRequest(
+        domain=NetworkDomain.VLAN,
+        intent_type="set_access_vlan",
+        payload=VlanRenderPayload(),
+    )
+
+    class DummyCtx:
+        deps = req
+
+    output = ConfigRenderOutput(summary="Test", snippets=[])
+    result = await _enforce_snippets(DummyCtx(), output)
+    assert result == output
+
 @pytest.mark.asyncio
 async def test_validator_rejects_api_snippet_with_missing_payload(mock_ctx):
     output = ConfigRenderOutput(
@@ -133,6 +150,44 @@ async def test_validator_rejects_cli_snippet_with_missing_commands(mock_ctx):
         await _enforce_snippets(mock_ctx, output)
 
 
+@pytest.mark.asyncio
+async def test_validator_rejects_domain_specific_snippet_errors(mock_ctx):
+    output = ConfigRenderOutput(
+        summary="Test",
+        snippets=[
+            ConfigSnippet(
+                device_name="sw1",
+                backend_type=RenderBackendType.API,
+                render_role=RenderRole.PRIMARY,
+                api_payload=ApiRequestPayload(method="POST", path="/vlans", body={"vlan_id": 10}),
+                commands=[],
+            )
+        ],
+    )
+    with patch.object(VlanRenderPayload, "validate_snippets", return_value=["domain-rule violation"]):
+        with pytest.raises(ValueError, match="Domain-specific snippet validation failed"):
+            await _enforce_snippets(mock_ctx, output)
+
+
+@pytest.mark.asyncio
+async def test_validator_allows_domain_specific_snippet_noop(mock_ctx):
+    output = ConfigRenderOutput(
+        summary="Test",
+        snippets=[
+            ConfigSnippet(
+                device_name="sw1",
+                backend_type=RenderBackendType.API,
+                render_role=RenderRole.PRIMARY,
+                api_payload=ApiRequestPayload(method="POST", path="/vlans", body={"vlan_id": 10}),
+                commands=[],
+            )
+        ],
+    )
+    with patch.object(VlanRenderPayload, "validate_snippets", return_value=[]):
+        result = await _enforce_snippets(mock_ctx, output)
+    assert result == output
+
+
 def test_api_request_payload_rejects_unknown_fields():
     with pytest.raises(ValidationError):
         ApiRequestPayload(
@@ -141,3 +196,26 @@ def test_api_request_payload_rejects_unknown_fields():
             body={"id": 10},
             extra_field="nope",
         )
+
+
+def test_render_system_prompt_allows_supported_vlan_domain(mock_ctx):
+    prompt = render_system_prompt(mock_ctx)
+    assert "## Input Contract" in prompt
+    assert "- domain: vlan" in prompt
+
+
+def test_render_system_prompt_rejects_unsupported_domain():
+    req = RenderRequest(
+        domain=NetworkDomain.ACL,
+        intent_type="deny_any_any",
+        payload=VlanRenderPayload(),
+    )
+
+    class DummyCtx:
+        deps = req
+
+    with pytest.raises(ValueError) as exc_info:
+        render_system_prompt(DummyCtx())
+
+    assert "Unsupported render domain 'acl'" in str(exc_info.value)
+    assert "Supported render domains: routing, vlan." in str(exc_info.value)
