@@ -34,6 +34,25 @@ class NetworkDomain(str, Enum):
     WIRELESS = "wireless"
     OTHER = "other"
 
+
+class RequestKind(str, Enum):
+    ASK = "ask"
+    PLAN = "plan"
+    REVIEW = "review"
+
+
+class Capability(str, Enum):
+    TOPOLOGY = "topology"
+    IPAM = "ipam"
+    CHANGE = "change"
+    INCIDENT = "incident"
+
+
+class RoutingStatus(str, Enum):
+    ROUTED = "routed"
+    NEEDS_CLARIFICATION = "needs_clarification"
+    BLOCKED = "blocked"
+
 class ValidationStatus(str, Enum):
     PASS = "pass"
     WARN = "warn"
