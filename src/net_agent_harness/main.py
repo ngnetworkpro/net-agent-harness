@@ -25,6 +25,7 @@ from .tools.evaluation import evaluate_intent_state
 from .tools.validation_tools import validate_config_render 
 
 from .orchestration.desired_state_normalizer import normalize_desired_state
+from .orchestration.dispatcher import DispatchMode, dispatch_request
 from .orchestration.intent_router import route_intent
 from .orchestration.domain_loader import load_domain_context, DomainLoadError
 
@@ -95,13 +96,20 @@ def plan(request: str, operator: str = 'local-user'):
 
 async def _async_plan(request: str, operator: str = "local-user"):
     route = route_intent(request)
-    run_stage = RunStage.PLAN
+    dispatch = dispatch_request(route)
 
-    if route.domain.value in {"generic", "unknown"} or route.confidence < 0.65:
-        raise typer.BadParameter(
-            "Could not confidently determine the network domain from your request. "
-            "Please explicitly mention 'vlan', 'acl', 'routing', etc., or provide more context."
+    if dispatch.mode is not DispatchMode.WORKFLOW_RUN:
+        route_label = (
+            f"{route.kind.value}.{route.capability.value}"
+            if route.kind is not None and route.capability is not None
+            else route.status.value
         )
+        reason = route.rationale[0] if route.rationale else dispatch.reason
+        raise typer.BadParameter(
+            f"Request routed to {route_label} and cannot enter the change planning workflow. {reason}"
+        )
+
+    run_stage = dispatch.initial_stage or RunStage.PLAN
 
     try:
         domain_context = load_domain_context(route.domain)
@@ -133,6 +141,15 @@ async def _async_plan(request: str, operator: str = "local-user"):
     )
 
     reporter.update(run_stage.value, "running", "🧠 Evaluating configuration intent...")
+    reporter.update(
+        run_stage.value,
+        "running",
+        "🧭 Routed request into staged workflow.",
+        route_kind=route.kind.value if route.kind is not None else None,
+        route_capability=route.capability.value if route.capability is not None else None,
+        route_confidence=route.confidence,
+        dispatch_mode=dispatch.mode.value,
+    )
     planned = await run_agent_with_spinner(
         agent=change_planner,
         prompt=request,
