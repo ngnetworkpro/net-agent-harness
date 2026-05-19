@@ -27,7 +27,9 @@ from .tools.validation_tools import validate_config_render
 from .orchestration.desired_state_normalizer import normalize_desired_state
 from .orchestration.dispatcher import DispatchMode, dispatch_request
 from .orchestration.intent_router import route_intent
+from .orchestration.read_only_answer import build_read_only_answer
 from .orchestration.domain_loader import load_domain_context, DomainLoadError
+from .models.enums import Capability
 
 app = typer.Typer(help='Network agent harness prototype')
 run_app = typer.Typer(help='Run end-to-end stage pipelines')
@@ -79,6 +81,41 @@ def ensure_renderable(change_request: ChangeRequest) -> None:
             "Cannot render config: no concrete targets were resolved from inventory"
         )
 
+
+def _run_direct_answer(request: str, capability: Capability, operator: str) -> None:
+    answer = build_read_only_answer(
+        question=request,
+        capability=capability,
+        inventory_source=settings.inventory_source,
+        operator=operator,
+    )
+    runs_root = get_runs_root()
+    run_store = RunStore(runs_root)
+    reporter = RunProgressReporter(run_store, answer.meta.run_id)
+    artifact_store = ArtifactStore(runs_root)
+    run_store.create_run(
+        run_id=answer.meta.run_id,
+        operator=operator,
+        stage=RunStage.DISCOVER,
+        model_name=settings.ollama_model,
+    )
+    reporter.update(RunStage.DISCOVER.value, "running", "🔎 Building read-only answer...")
+    artifact_path = artifact_store.save_model(answer.meta.run_id, "answer", answer)
+    reporter.update(
+        RunStage.DISCOVER.value,
+        "completed",
+        f"✅ answer complete: {artifact_path}",
+        artifact="answer",
+        route_capability=capability.value,
+    )
+    print(
+        {
+            "run_id": answer.meta.run_id,
+            "artifact_path": str(artifact_path),
+            "output": answer.model_dump(mode="json"),
+        }
+    )
+
 @app.command()
 def plan(request: str, operator: str = 'local-user'):
     try:
@@ -93,6 +130,33 @@ def plan(request: str, operator: str = 'local-user'):
         traceback.print_exc()
         typer.secho(f"Error executing plan: {e}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
+
+
+@app.command()
+def ask(request: str, operator: str = "local-user"):
+    route = route_intent(request)
+    dispatch = dispatch_request(route)
+    if dispatch.mode is not DispatchMode.DIRECT_ANSWER:
+        route_label = (
+            f"{route.kind.value}.{route.capability.value}"
+            if route.kind is not None and route.capability is not None
+            else route.status.value
+        )
+        raise typer.BadParameter(
+            f"Request routed to {route_label}. Use the plan workflow for change requests."
+        )
+    assert route.capability is not None
+    _run_direct_answer(request, route.capability, operator)
+
+
+@app.command()
+def topology(request: str, operator: str = "local-user"):
+    _run_direct_answer(request, Capability.TOPOLOGY, operator)
+
+
+@app.command()
+def ipam(request: str, operator: str = "local-user"):
+    _run_direct_answer(request, Capability.IPAM, operator)
 
 async def _async_plan(request: str, operator: str = "local-user"):
     route = route_intent(request)

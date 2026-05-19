@@ -34,6 +34,7 @@ The pipeline currently handles end-to-end VLAN change planning:
 - Renders a candidate `ConfigRender` artifact from an approved change request
 - Validates the rendered candidate into a `ValidationReport` artifact
 - Keeps execution disabled by default and treats validation/review as the final active stage in this prototype
+- Supports read-only direct-answer queries for topology and IPAM capabilities
 
 ## Recent updates
 
@@ -210,6 +211,14 @@ net-agent run stages runs/<run_id>/change_request.json
 
 That command runs the render and validation stages in sequence and writes a `run_summary.json` artifact for the run.
 
+For read-only questions that should not enter the change workflow:
+
+```bash
+net-agent ask "What is connected to sw1?"
+net-agent topology "What is connected to sw1?"
+net-agent ipam "Is 10.10.21.0/24 assigned?"
+```
+
 To inspect a run directory:
 
 ```bash
@@ -280,6 +289,7 @@ The exact values will vary by model, but the top-level schema remains stable bec
 ## Key source files
 
 - `main.py` — CLI entry point via Typer; orchestrates the plan/render/validate flow
+- `orchestration/read_only_answer.py` — deterministic direct-answer path for read-only capabilities
 - `agents/agent_factory.py` — resolves the configured model provider (Ollama/NVIDIA/OpenAI) and builds PydanticAI agents
 - `agents/change_planner.py` — LLM agent that extracts scope, intent, risk, and desired state from a natural-language request
 - `agents/config_render_agent.py` — stub for model-backed config rendering
@@ -288,6 +298,8 @@ The exact values will vary by model, but the top-level schema remains stable bec
 - `orchestration/coordinator.py` — `StageCoordinator` that sequences render and validate stages and produces a `run_summary`
 - `orchestration/stream_utils.py` — spinner utility for long-running agent calls
 - `tools/inventory_tools.py` — `resolve_from_scope` resolves target devices from inventory authoritatively
+- `tools/topology_tools.py` — deterministic topology lookups from inventory snapshots
+- `tools/ipam_tools.py` — read-only IPAM lookups backed by adapter data
 - `tools/evaluation.py` — `evaluate_intent_state` evaluates VLAN intent against current device state to produce a `PlanDecision`
 - `tools/vlan_state.py` — pure helpers (`vlan_exists`, `trunk_allows_vlan`, `access_vlan_matches`, `compute_vlan_diff`)
 - `tools/config_tools.py` — deterministic stub renderer for candidate config output

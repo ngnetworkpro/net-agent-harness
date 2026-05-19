@@ -2,7 +2,15 @@ from pydantic import BaseModel, Field, ConfigDict
 from typing import Literal, Optional, Protocol
 from enum import Enum
 from .common import ArtifactMeta
-from .enums import ValidationStatus, SwitchportMode, AllowedVlansMode, NetworkDomain, RenderBackendType, RenderRole
+from .enums import (
+    AllowedVlansMode,
+    Capability,
+    NetworkDomain,
+    RenderBackendType,
+    RenderRole,
+    SwitchportMode,
+    ValidationStatus,
+)
 from .changes import VlanSpec, PortSpec
 
 
@@ -262,6 +270,16 @@ class ExecutionResult(BaseModel):
     status: str
     detail: str
     reference: str | None = None
+
+
+class ReadOnlyAnswer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    meta: ArtifactMeta
+    capability: Capability
+    question: str
+    answer: str
+    data: dict = Field(default_factory=dict)
+
 
 class RenderAcceptanceResult(BaseModel):
     """Result of deterministic render acceptance validation."""
