@@ -1,15 +1,27 @@
 from collections.abc import Callable
-from ..models.changes import DeviceChange, PlanDecision, VlanChange, VlanSpec, PortSpec
-from ..models.enums import NetworkDomain, PlanDecisionType
+from typing import Any
+from ..models.changes import (
+    DeviceChange,
+    PlanDecision,
+    VlanChange,
+    VlanSpec,
+    PortSpec,
+    VlanChangeOperation,
+    SviChangeOperation,
+    InterfaceChangeOperation,
+    ChangeOperation,
+)
+from ..models.enums import NetworkDomain, PlanDecisionType, DeviceVendor
+from ..models.inventory import DeviceInfo
 from ..tools.vlan_state import compute_vlan_diff, vlan_exists
 from ..orchestration.platform_constraints import validate_platform_constraints
 
 
-def _blocked(reason: str) -> PlanDecision:
+def _blocked(reason: str, diff: list[DeviceChange] | None = None) -> PlanDecision:
     return PlanDecision(
         decision=PlanDecisionType.BLOCKED,
         reason=reason,
-        diff=[],
+        diff=diff or [],
     )
 
 
@@ -27,6 +39,39 @@ def _apply(reason: str, diff: list[DeviceChange]) -> PlanDecision:
         reason=reason,
         diff=diff,
     )
+
+
+def get_svi_interface_name(vendor: DeviceVendor | str | None, vlan_id: int) -> str:
+    vendor_str = str(vendor).lower() if vendor else ""
+    if "juniper" in vendor_str or "mist" in vendor_str:
+        return f"irb.{vlan_id}"
+    elif "cisco" in vendor_str or "ios" in vendor_str:
+        return f"Vlan{vlan_id}"
+    else:
+        return f"vlan.{vlan_id}"
+
+
+def device_supports_svi(device: DeviceInfo) -> bool:
+    role = device.role.lower()
+    vendor_str = str(device.vendor).lower()
+    if "firewall" in role:
+        if "meraki" in vendor_str or (device.platform and "meraki" in device.platform.lower()):
+            return True
+        return False
+    return True
+
+
+def get_existing_svi_interface(device: DeviceInfo, vlan_id: int):
+    names_to_check = {
+        f"irb.{vlan_id}",
+        f"vlan.{vlan_id}",
+        f"vlan{vlan_id}",
+        f"vlan {vlan_id}",
+    }
+    for iface in device.interfaces:
+        if iface.name in names_to_check or iface.name.lower() in {n.lower() for n in names_to_check}:
+            return iface
+    return None
 
 
 def _load_device_from_inventory(
@@ -84,31 +129,51 @@ def _merge_device_changes(all_changes: list[DeviceChange]) -> list[DeviceChange]
     if not all_changes:
         return []
 
-    merged_vlans: list[VlanSpec] = []
-    merged_vlans_to_remove: list[VlanSpec] = []
-    merged_ports: list[PortSpec] = []
     device_name = all_changes[0].device
-
+    domain = all_changes[0].domain
+    
+    merged_ops: list[ChangeOperation] = []
     for dc in all_changes:
-        merged_vlans.extend(dc.changes.vlans_to_create)
-        merged_vlans_to_remove.extend(dc.changes.vlans_to_remove)
-        merged_ports.extend(dc.changes.ports_to_update)
+        merged_ops.extend(dc.changes.operations)
 
-    def _dedupe_ports(ports: list[PortSpec]) -> list[PortSpec]:
-        deduped: dict[tuple[str, int, str], PortSpec] = {}
-        for port in ports:
-            deduped[(port.interface, port.vlan_id, port.mode)] = port
-        return list(deduped.values())
+    # Deduplicate operations
+    # Key by (change_type, op, vlan_id, interface)
+    deduped: dict[tuple, ChangeOperation] = {}
+    for op in merged_ops:
+        key = (
+            op.change_type,
+            op.op,
+            getattr(op, "vlan_id", None),
+            getattr(op, "interface", None),
+        )
+        existing = deduped.get(key)
+        if existing is None:
+            deduped[key] = op
+        elif isinstance(op, VlanChangeOperation) and isinstance(existing, VlanChangeOperation):
+            # Prefer the one with a non-empty name
+            if not existing.name and op.name:
+                deduped[key] = op
+        else:
+            # For other operations, we can keep the existing or update.
+            pass
 
     return [DeviceChange(
         device=device_name,
-        domain=NetworkDomain.VLAN,
-        changes=VlanChange(
-            vlans_to_create=normalize_vlan_diff(merged_vlans),
-            vlans_to_remove=normalize_vlan_diff(merged_vlans_to_remove),
-            ports_to_update=_dedupe_ports(merged_ports),
-        ),
+        domain=domain,
+        changes=VlanChange(operations=list(deduped.values())),
     )]
+
+
+def _op_matches_device(op: dict, device_name: str) -> bool:
+    target_device = op.get("target_device")
+    target_devices = op.get("target_devices")
+    
+    if target_device is not None and target_device != device_name:
+        return False
+    if target_devices is not None and device_name not in target_devices:
+        return False
+        
+    return True
 
 
 def _evaluate_vlan_operations(
@@ -136,8 +201,9 @@ def _evaluate_vlan_operations(
     all_device_changes: list[DeviceChange] = []
     reason_parts: list[str] = []
 
-    vlan_ops = [op for op in operations if op.get("object_type") == "vlan"]
-    interface_ops = [op for op in operations if op.get("object_type") == "interface"]
+    vlan_ops = [op for op in operations if op.get("object_type") == "vlan" and _op_matches_device(op, device_name)]
+    interface_ops = [op for op in operations if op.get("object_type") == "interface" and _op_matches_device(op, device_name)]
+    svi_ops = [op for op in operations if op.get("object_type") == "svi" and _op_matches_device(op, device_name)]
 
     for vlan_op in vlan_ops:
         operation = vlan_op.get("operation")
@@ -168,9 +234,15 @@ def _evaluate_vlan_operations(
                     device=device_name,
                     domain=NetworkDomain.VLAN,
                     changes=VlanChange(
-                        vlans_to_create=[],
-                        vlans_to_remove=[VlanSpec(id=vlan_id, name=vlan_name)],
-                        ports_to_update=[],
+                        operations=[
+                            VlanChangeOperation(
+                                change_type="vlan",
+                                op="remove",
+                                vlan_id=vlan_id,
+                                name=vlan_name,
+                                status="apply",
+                            )
+                        ]
                     ),
                 ))
                 reason_parts.append(f"VLAN {vlan_id} must be deleted from {device_name}")
@@ -182,7 +254,6 @@ def _evaluate_vlan_operations(
         attrs = iface_op.get("attributes", {})
         iface_name = attrs.get("name")
         access_vlan = attrs.get("access_vlan")
-        # Removed unused attribute lookups
 
         if iface_name is None:
             return _blocked("interface name is required for interface operations.")
@@ -228,21 +299,179 @@ def _evaluate_vlan_operations(
         else:
             return _blocked(f"Unsupported interface operation '{operation}'.")
 
-    if not all_device_changes:
-        return _no_op(f"No changes required for {device_name}.")
+    for svi_op in svi_ops:
+        operation = svi_op.get("operation")
+        attrs = svi_op.get("attributes", {})
+        vlan_id = attrs.get("vlan_id")
+        ip_address = attrs.get("ip_address")
+        prefix_length = attrs.get("prefix_length")
+
+        if vlan_id is None:
+            return _blocked("vlan_id is required for svi operations.")
+
+        if operation == "ensure_present":
+            if not device_supports_svi(device):
+                all_device_changes.append(DeviceChange(
+                    device=device_name,
+                    domain=NetworkDomain.VLAN,
+                    changes=VlanChange(
+                        operations=[
+                            SviChangeOperation(
+                                change_type="svi",
+                                op="create",
+                                vlan_id=vlan_id,
+                                ip_address=ip_address,
+                                prefix_length=prefix_length,
+                                status="blocked",
+                                reason=f"SVI configuration is not supported on {device.role} devices (device {device_name}).",
+                            )
+                        ]
+                    )
+                ))
+                reason_parts.append(f"SVI configuration is not supported on {device_name}")
+                continue
+
+            existing_iface = get_existing_svi_interface(device, vlan_id)
+            if existing_iface:
+                target_ip = f"{ip_address}/{prefix_length}" if ip_address and prefix_length else None
+                if target_ip and target_ip in existing_iface.ip_addresses:
+                    all_device_changes.append(DeviceChange(
+                        device=device_name,
+                        domain=NetworkDomain.VLAN,
+                        changes=VlanChange(
+                            operations=[
+                                SviChangeOperation(
+                                    change_type="svi",
+                                    op="create",
+                                    vlan_id=vlan_id,
+                                    ip_address=ip_address,
+                                    prefix_length=prefix_length,
+                                    interface=existing_iface.name,
+                                    status="skip",
+                                    reason=f"SVI is already configured on interface {existing_iface.name}.",
+                                )
+                            ]
+                        )
+                    ))
+                else:
+                    iface_name = existing_iface.name
+                    all_device_changes.append(DeviceChange(
+                        device=device_name,
+                        domain=NetworkDomain.VLAN,
+                        changes=VlanChange(
+                            operations=[
+                                SviChangeOperation(
+                                    change_type="svi",
+                                    op="create",
+                                    vlan_id=vlan_id,
+                                    ip_address=ip_address,
+                                    prefix_length=prefix_length,
+                                    interface=iface_name,
+                                    status="apply",
+                                )
+                            ]
+                        )
+                    ))
+                    reason_parts.append(f"SVI for VLAN {vlan_id} must be updated on {device_name}")
+            else:
+                iface_name = get_svi_interface_name(device.vendor, vlan_id)
+                all_device_changes.append(DeviceChange(
+                    device=device_name,
+                    domain=NetworkDomain.VLAN,
+                    changes=VlanChange(
+                        operations=[
+                            SviChangeOperation(
+                                change_type="svi",
+                                op="create",
+                                vlan_id=vlan_id,
+                                ip_address=ip_address,
+                                prefix_length=prefix_length,
+                                interface=iface_name,
+                                status="apply",
+                            )
+                        ]
+                    )
+                ))
+                reason_parts.append(f"SVI for VLAN {vlan_id} must be created on {device_name}")
+
+        elif operation == "ensure_absent":
+            if not device_supports_svi(device):
+                all_device_changes.append(DeviceChange(
+                    device=device_name,
+                    domain=NetworkDomain.VLAN,
+                    changes=VlanChange(
+                        operations=[
+                            SviChangeOperation(
+                                change_type="svi",
+                                op="remove",
+                                vlan_id=vlan_id,
+                                status="blocked",
+                                reason=f"SVI configuration is not supported on {device.role} devices (device {device_name}).",
+                            )
+                        ]
+                    )
+                ))
+                reason_parts.append(f"SVI configuration is not supported on {device_name}")
+                continue
+
+            existing_iface = get_existing_svi_interface(device, vlan_id)
+            if existing_iface:
+                all_device_changes.append(DeviceChange(
+                    device=device_name,
+                    domain=NetworkDomain.VLAN,
+                    changes=VlanChange(
+                        operations=[
+                            SviChangeOperation(
+                                change_type="svi",
+                                op="remove",
+                                vlan_id=vlan_id,
+                                interface=existing_iface.name,
+                                status="apply",
+                            )
+                        ]
+                    )
+                ))
+                reason_parts.append(f"SVI for VLAN {vlan_id} must be deleted from {device_name}")
+            else:
+                iface_name = get_svi_interface_name(device.vendor, vlan_id)
+                all_device_changes.append(DeviceChange(
+                    device=device_name,
+                    domain=NetworkDomain.VLAN,
+                    changes=VlanChange(
+                        operations=[
+                            SviChangeOperation(
+                                change_type="svi",
+                                op="remove",
+                                vlan_id=vlan_id,
+                                interface=iface_name,
+                                status="skip",
+                                reason=f"SVI does not exist on {device_name}.",
+                            )
+                        ]
+                    )
+                ))
+        else:
+            return _blocked(f"Unsupported SVI operation '{operation}'.")
 
     merged_changes = _merge_device_changes(all_device_changes)
+    if not merged_changes or not merged_changes[0].changes.operations:
+        return _no_op(f"No changes required for {device_name}.")
 
-    merged_vlans = merged_changes[0].changes.vlans_to_create if merged_changes else []
-    merged_vlans_to_remove = merged_changes[0].changes.vlans_to_remove if merged_changes else []
-    merged_ports = merged_changes[0].changes.ports_to_update if merged_changes else []
+    ops = merged_changes[0].changes.operations
+    blocked_ops = [op for op in ops if op.status == "blocked"]
+    apply_ops = [op for op in ops if op.status == "apply"]
 
-    if not merged_vlans and not merged_vlans_to_remove and not merged_ports:
+    if blocked_ops:
+        reasons = [op.reason for op in blocked_ops if op.reason]
+        reason_str = "; ".join(reasons) if reasons else f"Blocked operations on {device_name}"
+        return _blocked(reason_str, merged_changes)
+
+    if not apply_ops:
         return _no_op(f"No changes required for {device_name}.")
 
     platform_errors = validate_platform_constraints(device.platform, merged_changes)
     if platform_errors:
-        return _blocked("; ".join(platform_errors))
+        return _blocked("; ".join(platform_errors), merged_changes)
 
     return _apply("; ".join(reason_parts) + ".", merged_changes)
 
@@ -274,20 +503,36 @@ def evaluate_intent_state(
     if not device_names:
         return _blocked("At least one target device is required to evaluate intent.")
 
-    if len(device_names) != 1:
-        return _blocked(
-            "This first-pass evaluator supports exactly one target device. "
-            "Split the request per device or extend the evaluator for multi-device scope."
-        )
-
     evaluator = _DOMAIN_EVALUATORS.get(domain)
     if evaluator is None:
         return _blocked(f"Unsupported evaluation domain '{domain}'.")
 
-    return evaluator(
-        run_id=run_id,
-        site=site,
-        device_name=device_names[0],
-        desired_state=desired_state,
-        inventory_source=inventory_source,
-    )
+    decisions = []
+    for device_name in device_names:
+        decision = evaluator(
+            run_id=run_id,
+            site=site,
+            device_name=device_name,
+            desired_state=desired_state,
+            inventory_source=inventory_source,
+        )
+        decisions.append(decision)
+
+    blocked_decisions = [d for d in decisions if d.decision == PlanDecisionType.BLOCKED]
+    if blocked_decisions:
+        reason = "; ".join(d.reason for d in blocked_decisions)
+        all_diffs = []
+        for d in decisions:
+            all_diffs.extend(d.diff)
+        return _blocked(reason, diff=all_diffs)
+
+    apply_decisions = [d for d in decisions if d.decision == PlanDecisionType.APPLY]
+    if apply_decisions:
+        reason = " ".join(d.reason for d in apply_decisions)
+        diff = []
+        for d in apply_decisions:
+            diff.extend(d.diff)
+        return _apply(reason, diff)
+
+    reason = " ".join(d.reason for d in decisions)
+    return _no_op(reason)
