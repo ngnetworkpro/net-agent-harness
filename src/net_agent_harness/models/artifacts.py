@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Literal, Optional, Protocol
 from enum import Enum
-from .common import ArtifactMeta
+from .common import ArtifactMeta, ScopeRef
 from .enums import (
     AllowedVlansMode,
     Capability,
@@ -279,6 +279,98 @@ class ReadOnlyAnswer(BaseModel):
     question: str
     answer: str
     data: dict = Field(default_factory=dict)
+
+
+class QueryFinding(BaseModel):
+    """A finding produced by a read-only query or analysis."""
+    model_config = ConfigDict(extra="forbid")
+    code: str
+    severity: Literal["low", "medium", "high", "critical"]
+    message: str
+    source: str | None = None
+
+
+class TopologyQueryResult(BaseModel):
+    """Typed result of a topology discovery query."""
+    model_config = ConfigDict(extra="forbid")
+    meta: ArtifactMeta
+    capability: Literal[Capability.TOPOLOGY] = Capability.TOPOLOGY
+    question: str
+    answer: str
+    scope: ScopeRef | None = None
+    links: list[dict] = Field(default_factory=list)
+    findings: list[QueryFinding] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+    missing_data: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
+class IPAMQueryResult(BaseModel):
+    """Typed result of an IPAM lookup query."""
+    model_config = ConfigDict(extra="forbid")
+    meta: ArtifactMeta
+    capability: Literal[Capability.IPAM] = Capability.IPAM
+    question: str
+    answer: str
+    scope: ScopeRef | None = None
+    prefix: dict | None = None
+    assignment: dict | None = None
+    findings: list[QueryFinding] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+    missing_data: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
+class InventoryQueryResult(BaseModel):
+    """Typed result of an inventory query."""
+    model_config = ConfigDict(extra="forbid")
+    meta: ArtifactMeta
+    capability: Literal[Capability.TOPOLOGY] = Capability.TOPOLOGY
+    question: str
+    answer: str
+    scope: ScopeRef | None = None
+    devices: list[dict] = Field(default_factory=list)
+    findings: list[QueryFinding] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+    missing_data: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
+class AnswerArtifact(BaseModel):
+    """Typed, versionable artifact for direct-answer (discovery) capabilities.
+
+    Intended as the durable persisted form of a read-only answer.
+    The `data` field carries the raw structured payload from the underlying tool;
+    typed subclasses (TopologyQueryResult, IPAMQueryResult, etc.) carry richer schemas.
+    """
+    model_config = ConfigDict(extra="forbid")
+    meta: ArtifactMeta
+    capability: Capability
+    question: str
+    answer: str
+    scope: ScopeRef | None = None
+    findings: list[QueryFinding] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+    missing_data: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    data: dict = Field(default_factory=dict)
+
+
+class IncidentSummary(BaseModel):
+    """Typed artifact produced by incident triage and review workflows."""
+    model_config = ConfigDict(extra="forbid")
+    meta: ArtifactMeta
+    capability: Literal[Capability.INCIDENT] = Capability.INCIDENT
+    title: str
+    description: str
+    scope: ScopeRef | None = None
+    affected_devices: list[str] = Field(default_factory=list)
+    findings: list[QueryFinding] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+    missing_data: list[str] = Field(default_factory=list)
+    severity: Literal["low", "medium", "high", "critical"] = "medium"
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    recommended_actions: list[str] = Field(default_factory=list)
 
 
 class RenderAcceptanceResult(BaseModel):
