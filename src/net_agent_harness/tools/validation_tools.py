@@ -49,6 +49,26 @@ def validate_config_render(
 ) -> ValidationReport:
     findings: list[Finding] = []
     check_results: list[ValidationCheckResult] = []
+    evidence = [f"config_render:{config_render.meta.artifact_id}"]
+    if change_request is not None:
+        evidence.append(f"change_request:{change_request.meta.artifact_id}")
+    evidence.extend(
+        f"rendered_device:{snippet.device_name}"
+        for snippet in config_render.snippets
+        if snippet.device_name
+    )
+    evidence = list(dict.fromkeys(evidence))
+
+    check_results.append(
+        ValidationCheckResult(
+            check_name="evidence_presence_check",
+            status=ValidationStatus.PASS if evidence else ValidationStatus.FAIL,
+            details="Validation captured explicit evidence references."
+            if evidence
+            else "Validation requires at least one evidence reference.",
+            blocking=not evidence,
+        )
+    )
 
     check_results.extend(_validate_snippets(config_render, findings))
 
@@ -85,7 +105,7 @@ def validate_config_render(
     status = ValidationStatus.PASS
     approved_for_execution = True
 
-    if any(f.severity == "high" for f in findings):
+    if not evidence or any(f.severity == "high" for f in findings):
         status = ValidationStatus.FAIL
         approved_for_execution = False
     elif findings:
@@ -103,6 +123,7 @@ def validate_config_render(
         checks_run=[check.check_name for check in check_results],
         check_results=check_results,
         findings=findings,
+        evidence=evidence,
         approved_for_execution=approved_for_execution,
     )
 

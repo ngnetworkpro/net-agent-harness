@@ -10,6 +10,9 @@ def test_build_read_only_answer_for_topology() -> None:
     )
     assert answer.capability is Capability.TOPOLOGY
     assert "sw1" in answer.answer.lower()
+    assert answer.evidence == ["inventory:mock"]
+    assert answer.missing_data == []
+    assert answer.confidence == 1.0
 
 
 def test_build_read_only_answer_for_ipam() -> None:
@@ -20,3 +23,6 @@ def test_build_read_only_answer_for_ipam() -> None:
     )
     assert answer.capability is Capability.IPAM
     assert "10.10.21.0/24" in answer.answer
+    assert answer.evidence == ["ipam:mock"]
+    assert answer.missing_data == []
+    assert answer.confidence == 1.0

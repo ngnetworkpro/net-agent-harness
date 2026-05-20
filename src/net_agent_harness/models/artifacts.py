@@ -260,6 +260,7 @@ class ValidationReport(BaseModel):
     checks_run: list[str] = Field(default_factory=list)
     check_results: list[ValidationCheckResult] = Field(default_factory=list)
     findings: list[Finding] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
     approved_for_execution: bool = False
 
 
@@ -288,6 +289,9 @@ class ReadOnlyAnswer(BaseModel):
     question: str
     answer: str
     data: dict = Field(default_factory=dict)
+    evidence: list[str] = Field(default_factory=list)
+    missing_data: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
 class QueryFinding(BaseModel):

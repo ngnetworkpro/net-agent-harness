@@ -209,8 +209,8 @@ def lookup_device_context(
     return {
         "source": "netbox",
         "device": device,
-        "interfaces": interfaces_payload.get("results", []),
-        "ip_addresses": ips_payload.get("results", []),
+        "interfaces": [_normalize_interface(item) for item in interfaces_payload.get("results", [])],
+        "ip_addresses": [_normalize_ip(item) for item in ips_payload.get("results", [])],
     }
 
 

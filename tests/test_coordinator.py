@@ -1,4 +1,10 @@
-from net_agent_harness.models.changes import ChangeRequest, RequestedChange, RollbackPlan, PlanDecision
+from net_agent_harness.models.changes import (
+    ChangeRequest,
+    PlanDecision,
+    RequestedChange,
+    ResolvedTarget,
+    RollbackPlan,
+)
 from net_agent_harness.models.common import ArtifactMeta, ScopeRef
 from net_agent_harness.models.enums import ChangeRisk, NetworkDomain, PlanDecisionType
 from net_agent_harness.orchestration.coordinator import StageCoordinator
@@ -7,7 +13,7 @@ from net_agent_harness.services.artifact_store import ArtifactStore
 
 from unittest.mock import patch, AsyncMock
 from net_agent_harness.models.artifacts import ConfigRender, ConfigRenderOutput, ConfigSnippet
-from net_agent_harness.models.enums import RenderBackendType, RenderRole
+from net_agent_harness.models.enums import DeviceVendor, RenderBackendType, RenderRole
 
 import pytest
 
@@ -41,6 +47,15 @@ async def test_stage_coordinator_pipeline_api_backend(mock_run, tmp_path, monkey
             intent="Add VLAN 220 to access switch sw1 at HQ",
         ),
         target_scope="device",
+        resolved_targets=[
+            ResolvedTarget(
+                name="sw1",
+                site="HQ",
+                role="access-switch",
+                platform="mist",
+                vendor=DeviceVendor.JUNIPER,
+            )
+        ],
         rollback_plan=RollbackPlan(
             summary="Revert",
             trigger_conditions=["Error"],

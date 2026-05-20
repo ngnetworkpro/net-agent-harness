@@ -34,15 +34,33 @@ def answer_topology_question(question: str, inventory_source: str = "mock") -> d
     inventory = lookup_inventory_sync(inventory_source=inventory_source, site="HQ")
     edges = _extract_edges(inventory)
     device_match = _DEVICE_RE.search(question)
+    evidence = [f"inventory:{inventory.get('source', inventory_source)}"]
     if device_match:
         device_name = device_match.group(0)
         related = [edge for edge in edges if edge["source_device"] == device_name]
         if related:
-            targets = ", ".join(f"{edge['target_device']} via {edge['source_interface']}" for edge in related)
-            return {"answer": f"{device_name} has links to {targets}.", "data": {"links": related}}
-        return {"answer": f"No topology links found for {device_name}.", "data": {"links": []}}
+            targets = ", ".join(
+                f"{edge['target_device']} via {edge['source_interface']}" for edge in related
+            )
+            return {
+                "answer": f"{device_name} has links to {targets}.",
+                "data": {"links": related},
+                "evidence": evidence,
+                "missing_data": [],
+                "confidence": 1.0,
+            }
+        return {
+            "answer": f"No topology links found for {device_name}.",
+            "data": {"links": []},
+            "evidence": evidence,
+            "missing_data": [f"topology links for {device_name}"],
+            "confidence": 0.6,
+        }
 
     return {
         "answer": f"Discovered {len(edges)} topology links in inventory.",
         "data": {"links": edges},
+        "evidence": evidence,
+        "missing_data": [],
+        "confidence": 1.0,
     }
