@@ -338,7 +338,7 @@ class InventoryQueryResult(BaseModel):
     """Typed result of an inventory query."""
     model_config = ConfigDict(extra="forbid")
     meta: ArtifactMeta
-    capability: Literal[Capability.TOPOLOGY] = Capability.TOPOLOGY
+    capability: Literal[Capability.INVENTORY] = Capability.INVENTORY
     question: str
     answer: str
     scope: ScopeRef | None = None
@@ -369,7 +369,7 @@ class AnswerArtifact(BaseModel):
     data: dict = Field(default_factory=dict)
 
 
-class IncidentSummary(BaseModel):
+class IncidentSummaryArtifact(BaseModel):
     """Typed artifact produced by incident triage and review workflows."""
     model_config = ConfigDict(extra="forbid")
     meta: ArtifactMeta

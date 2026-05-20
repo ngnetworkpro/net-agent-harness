@@ -71,7 +71,7 @@ class StageCoordinator:
             artifact_id=f"config-render-{change_request.meta.run_id}",
             parent_artifact_id=change_request.meta.artifact_id,
             created_at=datetime.now(timezone.utc),
-            created_by=config_render.meta.created_by,
+            created_by="stage_coordinator",
         )
         if config_render.meta.artifact_id not in change_request.meta.child_artifact_ids:
             change_request.meta.child_artifact_ids.append(config_render.meta.artifact_id)
@@ -161,6 +161,16 @@ class StageCoordinator:
             approved_for_execution=validation_report.approved_for_execution,
         )
         path = self.artifact_store.save_model(change_request.meta.run_id, "execution_plan", execution_plan)
+        if self.run_store:
+            approval_status = "ready" if execution_plan.approved_for_execution else "blocked"
+            self.run_store.update_stage(
+                change_request.meta.run_id,
+                "approval_pending",
+                approval_status,
+                artifact="execution_plan",
+                artifact_id=execution_plan.meta.artifact_id,
+                approved_for_execution=execution_plan.approved_for_execution,
+            )
         if execution_plan.meta.artifact_id not in validation_report.meta.child_artifact_ids:
             validation_report.meta.child_artifact_ids.append(execution_plan.meta.artifact_id)
             self.artifact_store.save_model(change_request.meta.run_id, "validation_report", validation_report)

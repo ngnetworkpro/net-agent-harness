@@ -68,6 +68,7 @@ _EXECUTION_TOOLS: frozenset[str] = frozenset(
 # Capabilities may only call tools explicitly listed here.
 CAPABILITY_TOOL_REGISTRY: dict[Capability, frozenset[str]] = {
     Capability.TOPOLOGY: _INVENTORY_READ_TOOLS | _TOPOLOGY_READ_TOOLS,
+    Capability.INVENTORY: _INVENTORY_READ_TOOLS,
     Capability.IPAM: _IPAM_READ_TOOLS,
     Capability.CHANGE: _INVENTORY_READ_TOOLS | _EVALUATION_TOOLS,
     Capability.INCIDENT: _INVENTORY_READ_TOOLS | _TOPOLOGY_READ_TOOLS | _IPAM_READ_TOOLS,

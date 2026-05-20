@@ -63,6 +63,7 @@ class RequestKind(str, Enum):
 class Capability(str, Enum):
     TOPOLOGY = "topology"
     IPAM = "ipam"
+    INVENTORY = "inventory"
     CHANGE = "change"
     INCIDENT = "incident"
     SITE = "site"

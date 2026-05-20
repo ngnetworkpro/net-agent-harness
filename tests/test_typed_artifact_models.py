@@ -4,7 +4,7 @@ import pytest
 from net_agent_harness.models.artifacts import (
     AnswerArtifact,
     IPAMQueryResult,
-    IncidentSummary,
+    IncidentSummaryArtifact,
     InventoryQueryResult,
     QueryFinding,
     TopologyQueryResult,
@@ -106,7 +106,7 @@ class TestInventoryQueryResult:
             question="List devices at HQ",
             answer="3 devices found.",
         )
-        assert result.capability is Capability.TOPOLOGY
+        assert result.capability is Capability.INVENTORY
         assert result.devices == []
 
     def test_with_devices(self):
@@ -152,7 +152,7 @@ class TestAnswerArtifact:
 
 class TestIncidentSummary:
     def test_defaults(self):
-        summary = IncidentSummary(
+        summary = IncidentSummaryArtifact(
             meta=_meta(),
             title="Link down on sw1",
             description="Interface ge-0/0/1 went down.",
@@ -163,7 +163,7 @@ class TestIncidentSummary:
         assert summary.recommended_actions == []
 
     def test_full(self):
-        summary = IncidentSummary(
+        summary = IncidentSummaryArtifact(
             meta=_meta(),
             title="Incident",
             description="Desc",

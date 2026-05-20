@@ -77,7 +77,7 @@ class ArtifactStore:
 
             nodes.append(node)
 
-            if stage_status in {"failed", "fail", "blocked", "rejected", "cancelled"}:
+            if stage_status in {"failed", "fail", "warn", "blocked", "rejected", "cancelled"}:
                 upstream_ok = False
             if not exists:
                 upstream_ok = False

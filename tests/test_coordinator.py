@@ -6,9 +6,10 @@ from net_agent_harness.models.changes import (
     RollbackPlan,
 )
 from net_agent_harness.models.common import ArtifactMeta, ScopeRef
-from net_agent_harness.models.enums import ChangeRisk, NetworkDomain, PlanDecisionType
+from net_agent_harness.models.enums import ChangeRisk, NetworkDomain, PlanDecisionType, RunStage
 from net_agent_harness.orchestration.coordinator import StageCoordinator
 from net_agent_harness.services.artifact_store import ArtifactStore
+from net_agent_harness.services.run_store import RunStore
 
 
 from unittest.mock import patch, AsyncMock
@@ -77,6 +78,7 @@ async def test_stage_coordinator_pipeline_api_backend(mock_run, tmp_path, monkey
         store.artifact_path("run-1", "config_render").read_text(encoding="utf-8")
     )
     assert config_render.meta.parent_artifact_id == "change-1"
+    assert config_render.meta.created_by == "stage_coordinator"
 
     from net_agent_harness.models.artifacts import ValidationReport, ExecutionPlan
     validation_report = ValidationReport.model_validate_json(
@@ -291,3 +293,51 @@ async def test_stage_coordinator_validates_platform_constraints_per_device(tmp_p
 
     with pytest.raises(ValueError, match="platform constraints failed"):
         await coordinator.render(change_request)
+
+
+def test_create_execution_plan_updates_approval_pending_stage(tmp_path):
+    artifacts_dir = tmp_path / "artifacts"
+    runs_dir = tmp_path / "runs"
+    artifact_store = ArtifactStore(artifacts_dir)
+    run_store = RunStore(runs_dir)
+    coordinator = StageCoordinator(artifact_store, run_store=run_store)
+    run_store.create_run(
+        run_id="run-ep",
+        operator="test",
+        stage=RunStage.PLAN,
+        model_name="test-model",
+    )
+
+    change_request = ChangeRequest(
+        meta=ArtifactMeta(run_id="run-ep", artifact_id="cr-ep", created_by="test"),
+        domain=NetworkDomain.VLAN,
+        scope=ScopeRef(site="HQ", device_names=["sw1"]),
+        requested_change=RequestedChange(
+            summary="Add VLAN 220",
+            requested_by="tester",
+            intent="Add VLAN 220 to sw1",
+        ),
+        target_scope="device",
+        rollback_plan=RollbackPlan(summary="Revert"),
+        risk=ChangeRisk.LOW,
+    )
+
+    from net_agent_harness.models.artifacts import ValidationReport
+    from net_agent_harness.models.enums import ValidationStatus
+    validation_report = ValidationReport(
+        meta=ArtifactMeta(run_id="run-ep", artifact_id="vr-ep", created_by="test"),
+        overall_status=ValidationStatus.PASS,
+        approved_for_execution=True,
+    )
+
+    execution_plan, _ = coordinator.create_execution_plan(change_request, validation_report)
+    run_payload = (runs_dir / "run-ep" / "run.json").read_text(encoding="utf-8")
+
+    import json
+    stage_history = json.loads(run_payload)["stage_history"]
+    assert execution_plan.status == "ready"
+    assert stage_history[-1]["stage"] == "approval_pending"
+    assert stage_history[-1]["status"] == "ready"
+    assert stage_history[-1]["artifact"] == "execution_plan"
+    assert stage_history[-1]["artifact_id"] == execution_plan.meta.artifact_id
+    assert stage_history[-1]["approved_for_execution"] is True
