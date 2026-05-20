@@ -26,13 +26,25 @@ HANDLER_REGISTRY: dict[Capability, str] = {
     Capability.IPAM: "ipam_lookup",
     Capability.CHANGE: "change_workflow",
     Capability.INCIDENT: "incident_review",
+    Capability.SITE: "site_workflow",
 }
 
 DISPATCH_MODE_BY_ROUTE: dict[tuple[RequestKind, Capability], DispatchMode] = {
     (RequestKind.ASK, Capability.TOPOLOGY): DispatchMode.DIRECT_ANSWER,
     (RequestKind.ASK, Capability.IPAM): DispatchMode.DIRECT_ANSWER,
     (RequestKind.PLAN, Capability.CHANGE): DispatchMode.WORKFLOW_RUN,
-    (RequestKind.REVIEW, Capability.INCIDENT): DispatchMode.BLOCKED,
+    (RequestKind.PLAN, Capability.IPAM): DispatchMode.WORKFLOW_RUN,
+    (RequestKind.PLAN, Capability.TOPOLOGY): DispatchMode.WORKFLOW_RUN,
+    (RequestKind.PLAN, Capability.SITE): DispatchMode.WORKFLOW_RUN,
+    (RequestKind.REVIEW, Capability.INCIDENT): DispatchMode.WORKFLOW_RUN,
+}
+
+INITIAL_STAGE_BY_ROUTE: dict[tuple[RequestKind, Capability], RunStage] = {
+    (RequestKind.PLAN, Capability.CHANGE): RunStage.PLAN,
+    (RequestKind.PLAN, Capability.IPAM): RunStage.PLAN,
+    (RequestKind.PLAN, Capability.TOPOLOGY): RunStage.PLAN,
+    (RequestKind.PLAN, Capability.SITE): RunStage.DISCOVER,
+    (RequestKind.REVIEW, Capability.INCIDENT): RunStage.INCIDENT,
 }
 
 
@@ -51,11 +63,12 @@ def dispatch_request(request: RoutedRequest) -> DispatchDecision:
     mode = DISPATCH_MODE_BY_ROUTE[(request.kind, request.capability)]
 
     if mode is DispatchMode.WORKFLOW_RUN:
+        initial_stage = INITIAL_STAGE_BY_ROUTE.get((request.kind, request.capability))
         return DispatchDecision(
             mode=mode,
             handler=handler,
-            reason="Planner change workflow selected from deterministic routing output.",
-            initial_stage=RunStage.PLAN,
+            reason="Workflow selected from deterministic routing output.",
+            initial_stage=initial_stage,
         )
 
     if mode is DispatchMode.DIRECT_ANSWER:
@@ -68,5 +81,5 @@ def dispatch_request(request: RoutedRequest) -> DispatchDecision:
     return DispatchDecision(
         mode=mode,
         handler=handler,
-        reason="Incident review routing is recognized but no execution workflow is enabled yet.",
+        reason="Request routing is recognized but no execution workflow is enabled yet.",
     )

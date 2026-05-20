@@ -11,6 +11,9 @@ class TestWorkflowFamilyEnum:
         assert WorkflowFamily.CHANGE.value == "change"
         assert WorkflowFamily.INCIDENT.value == "incident"
 
+    def test_site_family_exists(self):
+        assert WorkflowFamily.SITE.value == "site"
+
 
 class TestWorkflowStageGraph:
     def test_change_graph_includes_expected_stages(self):
@@ -28,6 +31,23 @@ class TestWorkflowStageGraph:
     def test_incident_graph_defined(self):
         stages = WORKFLOW_STAGE_GRAPH[WorkflowFamily.INCIDENT]
         assert len(stages) >= 1
+
+    def test_incident_graph_includes_incident_and_review(self):
+        stages = WORKFLOW_STAGE_GRAPH[WorkflowFamily.INCIDENT]
+        assert "incident" in stages
+        assert "review" in stages
+
+    def test_site_graph_includes_all_provisioning_stages(self):
+        stages = WORKFLOW_STAGE_GRAPH[WorkflowFamily.SITE]
+        assert "discover" in stages
+        assert "allocate_ipam" in stages
+        assert "plan_topology" in stages
+        assert "plan_changes" in stages
+        assert "validate" in stages
+
+    def test_all_workflow_families_have_graph_entries(self):
+        for family in WorkflowFamily:
+            assert family in WORKFLOW_STAGE_GRAPH, f"{family} missing from WORKFLOW_STAGE_GRAPH"
 
 
 class TestRunStoreWorkflowFamily:
@@ -79,6 +99,20 @@ class TestRunStoreWorkflowFamily:
         payload = json.loads(path.read_text())
         assert payload["workflow_family"] == "incident"
         assert payload["request_capability"] == "incident"
+
+    def test_create_run_site_workflow(self, tmp_path):
+        store = RunStore(tmp_path)
+        path = store.create_run(
+            "run-site",
+            "tester",
+            RunStage.DISCOVER,
+            "llama3",
+            workflow_family=WorkflowFamily.SITE,
+            request_capability=Capability.SITE,
+        )
+        payload = json.loads(path.read_text())
+        assert payload["workflow_family"] == "site"
+        assert payload["request_capability"] == "site"
 
     def test_stage_history_preserved_with_workflow_family(self, tmp_path):
         store = RunStore(tmp_path)

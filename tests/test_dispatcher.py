@@ -54,7 +54,7 @@ def test_dispatch_request_blocks_non_routed_requests() -> None:
     assert decision.handler == "clarification_required"
 
 
-def test_dispatch_request_blocks_incident_review_until_workflow_exists() -> None:
+def test_dispatch_request_routes_incident_review_to_workflow() -> None:
     routed = RoutedRequest(
         status=RoutingStatus.ROUTED,
         kind=RequestKind.REVIEW,
@@ -67,5 +67,60 @@ def test_dispatch_request_blocks_incident_review_until_workflow_exists() -> None
 
     decision = dispatch_request(routed)
 
-    assert decision.mode is DispatchMode.BLOCKED
+    assert decision.mode is DispatchMode.WORKFLOW_RUN
     assert decision.handler == "incident_review"
+    assert decision.initial_stage is RunStage.INCIDENT
+
+
+def test_dispatch_request_sends_plan_ipam_to_workflow() -> None:
+    routed = RoutedRequest(
+        status=RoutingStatus.ROUTED,
+        kind=RequestKind.PLAN,
+        capability=Capability.IPAM,
+        confidence=0.85,
+        requires_run=True,
+        requires_approval=False,
+        rationale=["allocate", "subnet"],
+    )
+
+    decision = dispatch_request(routed)
+
+    assert decision.mode is DispatchMode.WORKFLOW_RUN
+    assert decision.handler == "ipam_lookup"
+    assert decision.initial_stage is RunStage.PLAN
+
+
+def test_dispatch_request_sends_plan_topology_to_workflow() -> None:
+    routed = RoutedRequest(
+        status=RoutingStatus.ROUTED,
+        kind=RequestKind.PLAN,
+        capability=Capability.TOPOLOGY,
+        confidence=0.85,
+        requires_run=True,
+        requires_approval=False,
+        rationale=["topology change", "topology"],
+    )
+
+    decision = dispatch_request(routed)
+
+    assert decision.mode is DispatchMode.WORKFLOW_RUN
+    assert decision.handler == "topology_answer"
+    assert decision.initial_stage is RunStage.PLAN
+
+
+def test_dispatch_request_sends_plan_site_to_workflow() -> None:
+    routed = RoutedRequest(
+        status=RoutingStatus.ROUTED,
+        kind=RequestKind.PLAN,
+        capability=Capability.SITE,
+        confidence=0.85,
+        requires_run=True,
+        requires_approval=False,
+        rationale=["provision site"],
+    )
+
+    decision = dispatch_request(routed)
+
+    assert decision.mode is DispatchMode.WORKFLOW_RUN
+    assert decision.handler == "site_workflow"
+    assert decision.initial_stage is RunStage.DISCOVER

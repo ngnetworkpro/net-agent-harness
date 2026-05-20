@@ -17,6 +17,13 @@ class RunStage(str, Enum):
     VERIFY = "verify"
     COMPLETE = "complete"
     FAILED = "failed"
+    # Incident workflow stages
+    INCIDENT = "incident"
+    REVIEW = "review"
+    # Site provisioning workflow stages
+    ALLOCATE_IPAM = "allocate_ipam"
+    PLAN_TOPOLOGY = "plan_topology"
+    PLAN_CHANGES = "plan_changes"
 
 
 class ChangeRisk(str, Enum):
@@ -58,6 +65,7 @@ class Capability(str, Enum):
     IPAM = "ipam"
     CHANGE = "change"
     INCIDENT = "incident"
+    SITE = "site"
 
 
 class RoutingStatus(str, Enum):
@@ -119,6 +127,7 @@ class WorkflowFamily(str, Enum):
     DISCOVERY = "discovery"
     CHANGE = "change"
     INCIDENT = "incident"
+    SITE = "site"
 
 
 class IntentStatus(str, Enum):
