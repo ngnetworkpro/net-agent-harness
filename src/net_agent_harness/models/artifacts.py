@@ -272,6 +272,15 @@ class ExecutionResult(BaseModel):
     reference: str | None = None
 
 
+class ExecutionPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    meta: ArtifactMeta
+    backend: str
+    status: Literal["ready", "blocked"]
+    detail: str
+    approved_for_execution: bool = False
+
+
 class ReadOnlyAnswer(BaseModel):
     model_config = ConfigDict(extra="forbid")
     meta: ArtifactMeta

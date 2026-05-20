@@ -1,4 +1,4 @@
-from .artifacts import ConfigRender, ReadOnlyAnswer, ValidationReport
+from .artifacts import ConfigRender, ExecutionPlan, ReadOnlyAnswer, ValidationReport
 from .changes import ChangeRequest
 from .inventory import InventorySnapshot
 from .ipam import IpamSnapshot
@@ -10,6 +10,7 @@ __all__ = [
     "IpamSnapshot",
     "ConfigRender",
     "ValidationReport",
+    "ExecutionPlan",
     "ReadOnlyAnswer",
     "RoutedRequest",
 ]

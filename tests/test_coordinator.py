@@ -6,7 +6,7 @@ from net_agent_harness.services.artifact_store import ArtifactStore
 
 
 from unittest.mock import patch, AsyncMock
-from net_agent_harness.models.artifacts import ConfigRenderOutput, ConfigSnippet
+from net_agent_harness.models.artifacts import ConfigRender, ConfigRenderOutput, ConfigSnippet
 from net_agent_harness.models.enums import RenderBackendType, RenderRole
 
 import pytest
@@ -55,7 +55,24 @@ async def test_stage_coordinator_pipeline_api_backend(mock_run, tmp_path, monkey
     assert "run_summary" in summary["artifacts"]
     assert "config_render" in summary["artifacts"]
     assert "validation_report" in summary["artifacts"]
+    assert "execution_plan" in summary["artifacts"]
     mock_run.assert_called_once()
+
+    config_render = ConfigRender.model_validate_json(
+        store.artifact_path("run-1", "config_render").read_text(encoding="utf-8")
+    )
+    assert config_render.meta.parent_artifact_id == "change-1"
+
+    from net_agent_harness.models.artifacts import ValidationReport, ExecutionPlan
+    validation_report = ValidationReport.model_validate_json(
+        store.artifact_path("run-1", "validation_report").read_text(encoding="utf-8")
+    )
+    assert validation_report.meta.parent_artifact_id == config_render.meta.artifact_id
+
+    execution_plan = ExecutionPlan.model_validate_json(
+        store.artifact_path("run-1", "execution_plan").read_text(encoding="utf-8")
+    )
+    assert execution_plan.meta.parent_artifact_id == validation_report.meta.artifact_id
 
 
 @pytest.mark.asyncio
