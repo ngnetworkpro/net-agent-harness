@@ -95,7 +95,8 @@ def validate_config_render(
     return ValidationReport(
         meta=ArtifactMeta(
             run_id=config_render.meta.run_id,
-            artifact_id="validation-report-001",
+            artifact_id=f"validation-report-{config_render.meta.run_id}",
+            parent_artifact_id=config_render.meta.artifact_id,
             created_by="validate_config_render",
         ),
         overall_status=status,

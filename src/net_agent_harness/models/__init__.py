@@ -1,4 +1,4 @@
-from .artifacts import ConfigRender, ReadOnlyAnswer, ValidationReport
+from .artifacts import ConfigRender, ExecutionPlan, ReadOnlyAnswer, ValidationReport
 from .changes import ChangeRequest
 from .intent import ArtifactRef, BaseIntent, IPAMIntent, ProvisioningIntent, SiteIntent, TopologyIntent
 from .inventory import InventorySnapshot
@@ -15,6 +15,9 @@ __all__ = [
     "IPAMIntent",
     "InventorySnapshot",
     "IpamSnapshot",
+    "ConfigRender",
+    "ValidationReport",
+    "ExecutionPlan",
     "ProvisioningIntent",
     "ReadOnlyAnswer",
     "RoutedRequest",

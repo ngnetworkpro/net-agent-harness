@@ -6,6 +6,14 @@ class ArtifactMeta(BaseModel):
     model_config = ConfigDict(extra="forbid")
     run_id: str = Field(..., description="Unique run identifier")
     artifact_id: str = Field(..., description="Unique artifact identifier")
+    parent_artifact_id: str | None = Field(
+        default=None,
+        description="Upstream artifact this artifact was derived from",
+    )
+    child_artifact_ids: list[str] = Field(
+        default_factory=list,
+        description="Downstream artifacts derived from this artifact",
+    )
     version: int = Field(default=1, ge=1)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     created_by: str = Field(..., description="Agent or service name")

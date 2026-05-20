@@ -1,7 +1,9 @@
 from pathlib import Path
-from ..models.artifacts import ConfigRender, ValidationReport, ExecutionResult
+from datetime import datetime, timezone
+from ..models.artifacts import ConfigRender, ExecutionPlan, ValidationReport, ExecutionResult
 from ..models.changes import ChangeRequest
 from ..models.enums import PlanDecisionType, RenderBackendType
+from ..models.common import ArtifactMeta
 from ..services.artifact_store import ArtifactStore
 from ..services.run_store import RunStore
 from ..tools.validation_tools import validate_config_render
@@ -64,6 +66,17 @@ class StageCoordinator:
                 **render_result.model_dump()
             )
 
+        config_render.meta = ArtifactMeta(
+            run_id=change_request.meta.run_id,
+            artifact_id=f"config-render-{change_request.meta.run_id}",
+            parent_artifact_id=change_request.meta.artifact_id,
+            created_at=datetime.now(timezone.utc),
+            created_by=config_render.meta.created_by,
+        )
+        if config_render.meta.artifact_id not in change_request.meta.child_artifact_ids:
+            change_request.meta.child_artifact_ids.append(config_render.meta.artifact_id)
+            self.artifact_store.save_model(change_request.meta.run_id, "change_request", change_request)
+
         path = self.artifact_store.save_model(change_request.meta.run_id, 'config_render', config_render)
 
         if self.run_store:
@@ -88,6 +101,9 @@ class StageCoordinator:
                 artifact='validation_report',
                 approved_for_execution=validation_result.approved_for_execution,
             )
+        if validation_result.meta.artifact_id not in config_render.meta.child_artifact_ids:
+            config_render.meta.child_artifact_ids.append(validation_result.meta.artifact_id)
+            self.artifact_store.save_model(config_render.meta.run_id, "config_render", config_render)
         return validation_result, path
 
     async def execute(
@@ -121,25 +137,61 @@ class StageCoordinator:
 
         return result, path
 
+    def create_execution_plan(
+        self,
+        change_request: ChangeRequest,
+        validation_report: ValidationReport,
+    ) -> tuple[ExecutionPlan, Path]:
+        status = "ready" if validation_report.approved_for_execution else "blocked"
+        detail = (
+            "Validation approved execution."
+            if validation_report.approved_for_execution
+            else "Execution blocked: validation did not approve this change."
+        )
+        execution_plan = ExecutionPlan(
+            meta=ArtifactMeta(
+                run_id=change_request.meta.run_id,
+                artifact_id=f"execution-plan-{change_request.meta.run_id}",
+                parent_artifact_id=validation_report.meta.artifact_id,
+                created_by="stage_coordinator",
+            ),
+            backend=str(settings.execution_backend),
+            status=status,
+            detail=detail,
+            approved_for_execution=validation_report.approved_for_execution,
+        )
+        path = self.artifact_store.save_model(change_request.meta.run_id, "execution_plan", execution_plan)
+        if execution_plan.meta.artifact_id not in validation_report.meta.child_artifact_ids:
+            validation_report.meta.child_artifact_ids.append(execution_plan.meta.artifact_id)
+            self.artifact_store.save_model(change_request.meta.run_id, "validation_report", validation_report)
+        return execution_plan, path
+
     async def run_pipeline(self, change_request: ChangeRequest) -> dict:
         render_result, render_path = await self.render(change_request)
         validation_result, validation_path = self.validate(render_result, change_request)
+        execution_plan, execution_plan_path = self.create_execution_plan(change_request, validation_result)
         summary = {
             'run_id': change_request.meta.run_id,
             'artifacts': {
                 'change_request': str(self.artifact_store.artifact_path(change_request.meta.run_id, 'change_request')),
                 'config_render': str(render_path),
                 'validation_report': str(validation_path),
+                'execution_plan': str(execution_plan_path),
             },
             'status': validation_result.overall_status.value,
             'approved_for_execution': validation_result.approved_for_execution,
         }
 
-        if validation_result.approved_for_execution:
+        if execution_plan.approved_for_execution:
             try:
                 execution_result, execution_path = await self.execute(
                     render_result, change_request, validation_result
                 )
+                execution_result.meta.parent_artifact_id = execution_plan.meta.artifact_id
+                self.artifact_store.save_model(change_request.meta.run_id, "execution_result", execution_result)
+                if execution_result.meta.artifact_id not in execution_plan.meta.child_artifact_ids:
+                    execution_plan.meta.child_artifact_ids.append(execution_result.meta.artifact_id)
+                    self.artifact_store.save_model(change_request.meta.run_id, "execution_plan", execution_plan)
                 summary['artifacts']['execution_result'] = str(execution_path)
                 summary['execution_status'] = execution_result.status
                 summary['execution_reference'] = execution_result.reference
