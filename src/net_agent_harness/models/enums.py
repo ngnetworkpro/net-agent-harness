@@ -107,3 +107,12 @@ class WorkflowFamily(str, Enum):
     DISCOVERY = "discovery"
     CHANGE = "change"
     INCIDENT = "incident"
+
+
+class IntentStatus(str, Enum):
+    DRAFT = "draft"
+    APPROVED = "approved"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    BLOCKED = "blocked"
+    CANCELLED = "cancelled"
