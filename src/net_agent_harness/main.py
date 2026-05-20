@@ -11,8 +11,15 @@ from .agents.change_planner import change_planner
 from .orchestration.stream_utils import run_agent_with_spinner
 from .config import settings
 from .models.artifacts import ConfigRender
-from .models.changes import ChangeRequest
+from .models.changes import ChangeRequest, PlannedChange, ResolvedTarget
 from .models.common import ArtifactMeta
+from .models.resources import (
+    DeviceResourceRef,
+    ResourceRelationship,
+    ResourceRef,
+    SiteResourceRef,
+    SiteToDeviceRelationship,
+)
 from datetime import timezone, datetime
 from .models.enums import RunStage
 from .orchestration.coordinator import StageCoordinator
@@ -44,6 +51,64 @@ def _validate_run_id(run_id: str) -> str:
 
 def get_runs_root() -> Path:
     return settings.runs_dir
+
+
+def _build_authoritative_resource_refs(
+    planned: PlannedChange,
+    resolved_targets: list[ResolvedTarget],
+) -> tuple[list[ResourceRef], list[ResourceRelationship]]:
+    resources: list[ResourceRef] = []
+    relationships: list[ResourceRelationship] = []
+
+    if planned.scope.site:
+        site_ref = SiteResourceRef(site_name=planned.scope.site)
+        resources.append(site_ref)
+    else:
+        site_ref = None
+
+    for target in resolved_targets:
+        device_ref = DeviceResourceRef(device_name=target.name, site_name=target.site or planned.scope.site)
+        resources.append(device_ref)
+        if site_ref is not None:
+            relationships.append(
+                SiteToDeviceRelationship(
+                    site=site_ref,
+                    device=device_ref,
+                )
+            )
+
+    return resources, relationships
+
+
+def _merge_unique_resources(
+    planned_resources: list[ResourceRef],
+    authoritative_resources: list[ResourceRef],
+) -> list[ResourceRef]:
+    merged: list[ResourceRef] = []
+    seen: set[str] = set()
+    for resource in [*planned_resources, *authoritative_resources]:
+        key = resource.model_dump_json()
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(resource)
+    return merged
+
+
+def _merge_unique_relationships(
+    planned_relationships: list[ResourceRelationship],
+    authoritative_relationships: list[ResourceRelationship],
+) -> list[ResourceRelationship]:
+    merged: list[ResourceRelationship] = []
+    seen: set[str] = set()
+    for relationship in [*planned_relationships, *authoritative_relationships]:
+        key = relationship.model_dump_json()
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(relationship)
+    return merged
+
 
 def ensure_renderable(change_request: ChangeRequest) -> None:
     # Short-circuit: if the planner already evaluated this as a no_op,
@@ -264,6 +329,12 @@ async def _async_plan(request: str, operator: str = "local-user"):
         )
         planned.plan_decision = plan_decision
     reporter.update(run_stage.value, "running", "💾 Persisting change request artifact...")
+    target_resources, resource_relationships = _build_authoritative_resource_refs(planned, resolved_targets)
+    merged_resources = _merge_unique_resources(planned.target_resources, target_resources)
+    merged_relationships = _merge_unique_relationships(
+        planned.resource_relationships,
+        resource_relationships,
+    )
 
     artifact = ChangeRequest(
         meta=ArtifactMeta(
@@ -277,6 +348,8 @@ async def _async_plan(request: str, operator: str = "local-user"):
         scope=planned.scope,
         target_scope=planned.target_scope,
         resolved_targets=resolved_targets,
+        target_resources=merged_resources,
+        resource_relationships=merged_relationships,
         clarifications_needed=planned.clarifications_needed,
         requested_change=planned.requested_change,
         risk=planned.risk,
