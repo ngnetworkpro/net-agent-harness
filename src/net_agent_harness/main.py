@@ -11,8 +11,15 @@ from .agents.change_planner import change_planner
 from .orchestration.stream_utils import run_agent_with_spinner
 from .config import settings
 from .models.artifacts import ConfigRender
-from .models.changes import ChangeRequest
+from .models.changes import ChangeRequest, PlannedChange, ResolvedTarget
 from .models.common import ArtifactMeta
+from .models.resources import (
+    DeviceResourceRef,
+    ResourceRelationship,
+    ResourceRef,
+    SiteResourceRef,
+    SiteToDeviceRelationship,
+)
 from datetime import timezone, datetime
 from .models.enums import RunStage
 from .orchestration.coordinator import StageCoordinator
@@ -25,8 +32,11 @@ from .tools.evaluation import evaluate_intent_state
 from .tools.validation_tools import validate_config_render 
 
 from .orchestration.desired_state_normalizer import normalize_desired_state
+from .orchestration.dispatcher import DispatchMode, dispatch_request
 from .orchestration.intent_router import route_intent
+from .orchestration.read_only_answer import build_read_only_answer
 from .orchestration.domain_loader import load_domain_context, DomainLoadError
+from .models.enums import Capability
 
 app = typer.Typer(help='Network agent harness prototype')
 run_app = typer.Typer(help='Run end-to-end stage pipelines')
@@ -41,6 +51,64 @@ def _validate_run_id(run_id: str) -> str:
 
 def get_runs_root() -> Path:
     return settings.runs_dir
+
+
+def _build_authoritative_resource_refs(
+    planned: PlannedChange,
+    resolved_targets: list[ResolvedTarget],
+) -> tuple[list[ResourceRef], list[ResourceRelationship]]:
+    resources: list[ResourceRef] = []
+    relationships: list[ResourceRelationship] = []
+
+    if planned.scope.site:
+        site_ref = SiteResourceRef(site_name=planned.scope.site)
+        resources.append(site_ref)
+    else:
+        site_ref = None
+
+    for target in resolved_targets:
+        device_ref = DeviceResourceRef(device_name=target.name, site_name=target.site or planned.scope.site)
+        resources.append(device_ref)
+        if site_ref is not None:
+            relationships.append(
+                SiteToDeviceRelationship(
+                    site=site_ref,
+                    device=device_ref,
+                )
+            )
+
+    return resources, relationships
+
+
+def _merge_unique_resources(
+    planned_resources: list[ResourceRef],
+    authoritative_resources: list[ResourceRef],
+) -> list[ResourceRef]:
+    merged: list[ResourceRef] = []
+    seen: set[str] = set()
+    for resource in [*planned_resources, *authoritative_resources]:
+        key = resource.model_dump_json()
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(resource)
+    return merged
+
+
+def _merge_unique_relationships(
+    planned_relationships: list[ResourceRelationship],
+    authoritative_relationships: list[ResourceRelationship],
+) -> list[ResourceRelationship]:
+    merged: list[ResourceRelationship] = []
+    seen: set[str] = set()
+    for relationship in [*planned_relationships, *authoritative_relationships]:
+        key = relationship.model_dump_json()
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(relationship)
+    return merged
+
 
 def ensure_renderable(change_request: ChangeRequest) -> None:
     # Short-circuit: if the planner already evaluated this as a no_op,
@@ -78,6 +146,41 @@ def ensure_renderable(change_request: ChangeRequest) -> None:
             "Cannot render config: no concrete targets were resolved from inventory"
         )
 
+
+def _run_direct_answer(request: str, capability: Capability, operator: str) -> None:
+    answer = build_read_only_answer(
+        question=request,
+        capability=capability,
+        inventory_source=settings.inventory_source,
+        operator=operator,
+    )
+    runs_root = get_runs_root()
+    run_store = RunStore(runs_root)
+    reporter = RunProgressReporter(run_store, answer.meta.run_id)
+    artifact_store = ArtifactStore(runs_root)
+    run_store.create_run(
+        run_id=answer.meta.run_id,
+        operator=operator,
+        stage=RunStage.DISCOVER,
+        model_name=settings.ollama_model,
+    )
+    reporter.update(RunStage.DISCOVER.value, "running", "🔎 Building read-only answer...")
+    artifact_path = artifact_store.save_model(answer.meta.run_id, "answer", answer)
+    reporter.update(
+        RunStage.DISCOVER.value,
+        "completed",
+        f"✅ answer complete: {artifact_path}",
+        artifact="answer",
+        route_capability=capability.value,
+    )
+    print(
+        {
+            "run_id": answer.meta.run_id,
+            "artifact_path": str(artifact_path),
+            "output": answer.model_dump(mode="json"),
+        }
+    )
+
 @app.command()
 def plan(request: str, operator: str = 'local-user'):
     try:
@@ -93,15 +196,49 @@ def plan(request: str, operator: str = 'local-user'):
         typer.secho(f"Error executing plan: {e}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
 
+
+@app.command()
+def ask(request: str, operator: str = "local-user"):
+    route = route_intent(request)
+    dispatch = dispatch_request(route)
+    if dispatch.mode is not DispatchMode.DIRECT_ANSWER:
+        route_label = (
+            f"{route.kind.value}.{route.capability.value}"
+            if route.kind is not None and route.capability is not None
+            else route.status.value
+        )
+        raise typer.BadParameter(
+            f"Request routed to {route_label}. Use the plan workflow for change requests."
+        )
+    assert route.capability is not None
+    _run_direct_answer(request, route.capability, operator)
+
+
+@app.command()
+def topology(request: str, operator: str = "local-user"):
+    _run_direct_answer(request, Capability.TOPOLOGY, operator)
+
+
+@app.command()
+def ipam(request: str, operator: str = "local-user"):
+    _run_direct_answer(request, Capability.IPAM, operator)
+
 async def _async_plan(request: str, operator: str = "local-user"):
     route = route_intent(request)
-    run_stage = RunStage.PLAN
+    dispatch = dispatch_request(route)
 
-    if route.domain.value in {"generic", "unknown"} or route.confidence < 0.65:
-        raise typer.BadParameter(
-            "Could not confidently determine the network domain from your request. "
-            "Please explicitly mention 'vlan', 'acl', 'routing', etc., or provide more context."
+    if dispatch.mode is not DispatchMode.WORKFLOW_RUN:
+        route_label = (
+            f"{route.kind.value}.{route.capability.value}"
+            if route.kind is not None and route.capability is not None
+            else route.status.value
         )
+        reason = route.rationale[0] if route.rationale else dispatch.reason
+        raise typer.BadParameter(
+            f"Request routed to {route_label} and cannot enter the change planning workflow. {reason}"
+        )
+
+    run_stage = dispatch.initial_stage or RunStage.PLAN
 
     try:
         domain_context = load_domain_context(route.domain)
@@ -133,6 +270,15 @@ async def _async_plan(request: str, operator: str = "local-user"):
     )
 
     reporter.update(run_stage.value, "running", "🧠 Evaluating configuration intent...")
+    reporter.update(
+        run_stage.value,
+        "running",
+        "🧭 Routed request into staged workflow.",
+        route_kind=route.kind.value if route.kind is not None else None,
+        route_capability=route.capability.value if route.capability is not None else None,
+        route_confidence=route.confidence,
+        dispatch_mode=dispatch.mode.value,
+    )
     planned = await run_agent_with_spinner(
         agent=change_planner,
         prompt=request,
@@ -183,6 +329,12 @@ async def _async_plan(request: str, operator: str = "local-user"):
         )
         planned.plan_decision = plan_decision
     reporter.update(run_stage.value, "running", "💾 Persisting change request artifact...")
+    target_resources, resource_relationships = _build_authoritative_resource_refs(planned, resolved_targets)
+    merged_resources = _merge_unique_resources(planned.target_resources, target_resources)
+    merged_relationships = _merge_unique_relationships(
+        planned.resource_relationships,
+        resource_relationships,
+    )
 
     artifact = ChangeRequest(
         meta=ArtifactMeta(
@@ -196,6 +348,8 @@ async def _async_plan(request: str, operator: str = "local-user"):
         scope=planned.scope,
         target_scope=planned.target_scope,
         resolved_targets=resolved_targets,
+        target_resources=merged_resources,
+        resource_relationships=merged_relationships,
         clarifications_needed=planned.clarifications_needed,
         requested_change=planned.requested_change,
         risk=planned.risk,
@@ -206,9 +360,9 @@ async def _async_plan(request: str, operator: str = "local-user"):
     )
 
     artifact_path = artifact_store.save_model(run_id, "change_request", artifact)
-    if planned.plan_decision.decision.value == "no_op":
+    if planned.plan_decision and planned.plan_decision.decision.value == "no_op":
         reporter.update(run_stage.value, "completed", "✅ plan complete: no changes needed", artifact="change_request")
-    elif planned.plan_decision.decision.value == "apply":
+    elif planned.plan_decision and planned.plan_decision.decision.value == "apply":
         reporter.update(run_stage.value, "completed", f"✅ plan complete: ready for next steps. change request artifact at: {artifact_path}", artifact="change_request")
     else:
         reporter.update(run_stage.value, "blocked", f"❌ plan blocked. See artifact at: {artifact_path}", artifact="change_request")

@@ -18,9 +18,19 @@ def build_vlan_render_input(change_request: ChangeRequest):
             f"Render rejected: plan decision is '{change_request.plan_decision.decision.value}', expected 'apply'."
         )
 
+    target_by_name = {target.name: target for target in change_request.resolved_targets}
     vlan_ops = []
     interface_ops = []
     for change in change_request.plan_decision.diff:
+        target = target_by_name.get(change.device)
+        if target is None:
+            raise ValueError(
+                f"Render rejected: device '{change.device}' is not present in resolved_targets."
+            )
+        if not target.platform:
+            raise ValueError(
+                f"Render rejected: device '{change.device}' is missing platform in resolved_targets."
+            )
         if change.changes.vlans_to_remove:
             raise ValueError(
                 f"Render rejected: VLAN removal is not supported for device '{change.device}'."
@@ -32,7 +42,13 @@ def build_vlan_render_input(change_request: ChangeRequest):
                         vlan_id=vlan_spec.id,
                         vlan_name=vlan_spec.name if vlan_spec.name else None,
                         operation=OperationType.ENSURE_PRESENT,
-                        target=RenderTarget(name=change.device)
+                        target=RenderTarget(
+                            name=change.device,
+                            site=target.site,
+                            role=target.role,
+                            platform=target.platform,
+                            primary_ip=target.primary_ip,
+                        )
                     )
                 )
 
@@ -40,7 +56,13 @@ def build_vlan_render_input(change_request: ChangeRequest):
             interface_ops.append(
                 VlanInterfaceRenderOp(
                     interface_name=port_spec.interface,
-                    target=RenderTarget(name=change.device),
+                    target=RenderTarget(
+                        name=change.device,
+                        site=target.site,
+                        role=target.role,
+                        platform=target.platform,
+                        primary_ip=target.primary_ip,
+                    ),
                     access_vlan=port_spec.vlan_id if port_spec.mode == "access" else None,
                     switchport_mode=port_spec.mode,
                 )

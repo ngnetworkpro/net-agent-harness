@@ -17,6 +17,13 @@ class RunStage(str, Enum):
     VERIFY = "verify"
     COMPLETE = "complete"
     FAILED = "failed"
+    # Incident workflow stages
+    INCIDENT = "incident"
+    REVIEW = "review"
+    # Site provisioning workflow stages
+    ALLOCATE_IPAM = "allocate_ipam"
+    PLAN_TOPOLOGY = "plan_topology"
+    PLAN_CHANGES = "plan_changes"
 
 
 class ChangeRisk(str, Enum):
@@ -33,6 +40,39 @@ class NetworkDomain(str, Enum):
     ROUTING = "routing"
     WIRELESS = "wireless"
     OTHER = "other"
+
+
+class ResourceType(str, Enum):
+    SITE = "site"
+    DEVICE = "device"
+    INTERFACE = "interface"
+    VLAN = "vlan"
+    VRF = "vrf"
+    SUBNET = "subnet"
+    PREFIX = "prefix"
+    IP_ASSIGNMENT = "ip_assignment"
+    TOPOLOGY_LINK = "topology_link"
+
+
+class RequestKind(str, Enum):
+    ASK = "ask"
+    PLAN = "plan"
+    REVIEW = "review"
+
+
+class Capability(str, Enum):
+    TOPOLOGY = "topology"
+    IPAM = "ipam"
+    INVENTORY = "inventory"
+    CHANGE = "change"
+    INCIDENT = "incident"
+    SITE = "site"
+
+
+class RoutingStatus(str, Enum):
+    ROUTED = "routed"
+    NEEDS_CLARIFICATION = "needs_clarification"
+    BLOCKED = "blocked"
 
 class ValidationStatus(str, Enum):
     PASS = "pass"
@@ -82,3 +122,42 @@ class RenderBackendType(str, Enum):
 class RenderRole(str, Enum):
     PRIMARY = "primary"
     FALLBACK = "fallback"
+
+
+class WorkflowFamily(str, Enum):
+    DISCOVERY = "discovery"
+    CHANGE = "change"
+    INCIDENT = "incident"
+    SITE = "site"
+
+
+class IntentStatus(str, Enum):
+    DRAFT = "draft"
+    APPROVED = "approved"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    BLOCKED = "blocked"
+    CANCELLED = "cancelled"
+    
+class ResourceLifecycleState(str, Enum):
+    """Lifecycle state for a managed network resource or planned change.
+
+    States follow the change pipeline from intent through verification:
+
+    - ``current``  – reflects what is actually deployed right now.
+    - ``intended`` – the desired end-state expressed as policy-level intent;
+                     not yet modelled as a concrete diff.
+    - ``planned``  – change has been modelled and diffed; not yet approved.
+                     IPAM allocations that are reserved for a planned change
+                     also sit here.
+    - ``approved`` – change has passed an approval gate; not yet applied.
+    - ``applied``  – change has been pushed to the device; not yet verified.
+    - ``verified`` – applied change has been confirmed to match intent.
+    """
+
+    CURRENT = "current"
+    INTENDED = "intended"
+    PLANNED = "planned"
+    APPROVED = "approved"
+    APPLIED = "applied"
+    VERIFIED = "verified"

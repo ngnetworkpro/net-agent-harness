@@ -26,6 +26,9 @@ def test_validate_config_render_passes_candidate_output():
     report = validate_config_render(render)
     assert report.overall_status == ValidationStatus.PASS
     assert report.approved_for_execution is True
+    assert report.evidence == ["config_render:render-1", "rendered_device:sw1"]
+    check_status = {check.check_name: check.status for check in report.check_results}
+    assert check_status["evidence_presence_check"] == ValidationStatus.PASS
 
 
 def test_validate_config_render_warns_on_warnings():

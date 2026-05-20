@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     github_token: SecretStr | None = None
     github_base_branch: str = "main"
     require_approval_for_execute: bool = True
+    enable_inventory_writes: bool = False
+    enable_ipam_writes: bool = False
+    enable_topology_writes: bool = False
     runs_dir: Path = Path('runs')
     netbox_url: str | None = None
     netbox_token: SecretStr | None = None
