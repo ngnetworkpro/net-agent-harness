@@ -101,3 +101,9 @@ class RenderBackendType(str, Enum):
 class RenderRole(str, Enum):
     PRIMARY = "primary"
     FALLBACK = "fallback"
+
+
+class WorkflowFamily(str, Enum):
+    DISCOVERY = "discovery"
+    CHANGE = "change"
+    INCIDENT = "incident"
