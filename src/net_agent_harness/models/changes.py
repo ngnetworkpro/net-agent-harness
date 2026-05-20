@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from .common import ArtifactMeta, ScopeRef
 from .enums import ChangeRisk, TargetScope, PlanDecisionType, NetworkDomain, SwitchportMode, DeviceVendor
+from .resources import ResourceRef, ResourceRelationship
 from typing import Any, Union, Literal
 
 
@@ -168,6 +169,14 @@ class PlannedChange(BaseModel):
         default_factory=list,
         description="Concrete devices resolved from inventory for rendering and validation"
     )
+    target_resources: list[ResourceRef] = Field(
+        default_factory=list,
+        description="Typed references to resource objects targeted by the request",
+    )
+    resource_relationships: list[ResourceRelationship] = Field(
+        default_factory=list,
+        description="Structured relationships between targeted resources",
+    )
     clarifications_needed: list[str] = Field(
         default_factory=list,
         description="Questions that must be answered before rendering if targets cannot be resolved safely"
@@ -200,6 +209,8 @@ class ChangeRequest(BaseModel):
     scope: ScopeRef
     target_scope: TargetScope
     resolved_targets: list[ResolvedTarget] = Field(default_factory=list)
+    target_resources: list[ResourceRef] = Field(default_factory=list)
+    resource_relationships: list[ResourceRelationship] = Field(default_factory=list)
     clarifications_needed: list[str] = Field(default_factory=list)
     requested_change: RequestedChange
     risk: ChangeRisk
