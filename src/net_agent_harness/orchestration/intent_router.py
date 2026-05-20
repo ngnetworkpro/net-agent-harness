@@ -1,7 +1,7 @@
 import re
 from collections.abc import Iterable
 
-from ..models.enums import Capability, NetworkDomain, RequestKind, RoutingStatus
+from ..models.enums import Capability, NetworkDomain, RequestKind, ResourceType, RoutingStatus
 from ..models.routing import RoutedRequest
 
 DOMAIN_SIGNALS: dict[NetworkDomain, tuple[str, ...]] = {
@@ -71,6 +71,29 @@ INCIDENT_TERMS = (
 )
 
 DEVICE_REFERENCE_RE = re.compile(r"\b[a-z]{1,8}\d+\b", re.IGNORECASE)
+INTERFACE_REFERENCE_RE = re.compile(r"\b(?:gi|ge|xe|et|fa|te)\S*\b", re.IGNORECASE)
+CIDR_RE = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}/\d{1,2}\b")
+
+RESOURCE_SIGNALS: dict[ResourceType, tuple[str, ...]] = {
+    ResourceType.SITE: ("site", "campus", "branch", "hq"),
+    ResourceType.DEVICE: ("device", "switch", "router", "firewall", "stack"),
+    ResourceType.INTERFACE: ("port", "interface", "uplink", "downlink", "trunk"),
+    ResourceType.VLAN: ("vlan", "tagged", "untagged", "native vlan", "access vlan"),
+    ResourceType.VRF: ("vrf",),
+    ResourceType.SUBNET: ("subnet", "cidr"),
+    ResourceType.PREFIX: ("prefix", "prefix-list", "route"),
+    ResourceType.IP_ASSIGNMENT: ("ip assignment", "assigned", "available", "address"),
+    ResourceType.TOPOLOGY_LINK: ("topology", "link", "connected", "neighbor", "path"),
+}
+
+DOMAIN_DEFAULT_RESOURCE_TYPES: dict[NetworkDomain, tuple[ResourceType, ...]] = {
+    NetworkDomain.VLAN: (ResourceType.VLAN,),
+    NetworkDomain.ACL: (ResourceType.DEVICE,),
+    NetworkDomain.ROUTING: (ResourceType.PREFIX,),
+    NetworkDomain.WIRELESS: (ResourceType.SITE,),
+    NetworkDomain.PREFIX_LIST: (ResourceType.PREFIX,),
+    NetworkDomain.ROUTE_MAP: (ResourceType.DEVICE,),
+}
 
 
 def _match_terms(text: str, terms: Iterable[str]) -> list[str]:
@@ -100,6 +123,7 @@ def _build_routed_request(
     score: int,
     rationale: list[str],
     relevant_domains: list[NetworkDomain],
+    target_resource_types: list[ResourceType],
 ) -> RoutedRequest:
     return RoutedRequest(
         status=RoutingStatus.ROUTED,
@@ -109,14 +133,63 @@ def _build_routed_request(
         requires_run=kind is RequestKind.PLAN,
         requires_approval=capability is Capability.CHANGE,
         relevant_domains=relevant_domains,
+        target_resource_types=target_resource_types,
         rationale=rationale,
     )
+
+
+def _detect_resource_types(request: str, lower: str) -> list[ResourceType]:
+    hits: set[ResourceType] = set()
+
+    for resource_type, signals in RESOURCE_SIGNALS.items():
+        if _match_terms(lower, signals):
+            hits.add(resource_type)
+
+    if DEVICE_REFERENCE_RE.search(request):
+        hits.add(ResourceType.DEVICE)
+
+    if INTERFACE_REFERENCE_RE.search(request):
+        hits.add(ResourceType.INTERFACE)
+
+    if CIDR_RE.search(request):
+        hits.add(ResourceType.SUBNET)
+        hits.add(ResourceType.PREFIX)
+
+    ordered = [resource for resource in ResourceType if resource in hits]
+    return ordered
+
+
+def _augment_resources_from_domains(
+    resources: list[ResourceType],
+    relevant_domains: list[NetworkDomain],
+) -> list[ResourceType]:
+    combined: list[ResourceType] = []
+    seen: set[ResourceType] = set()
+
+    for resource in resources:
+        if resource in seen:
+            continue
+        seen.add(resource)
+        combined.append(resource)
+
+    for domain in relevant_domains:
+        for resource in DOMAIN_DEFAULT_RESOURCE_TYPES.get(domain, ()):
+            if resource in seen:
+                continue
+            seen.add(resource)
+            combined.append(resource)
+
+    return combined
 
 
 def route_intent(request: str) -> RoutedRequest:
     lower = request.casefold()
     domain_hits = _detect_domains(lower)
     relevant_domains = _matched_domains(domain_hits)
+    target_resource_types = _augment_resources_from_domains(
+        _detect_resource_types(request, lower),
+        relevant_domains,
+    )
 
     question_like, question_markers = _is_question(request, lower)
     change_hits = _match_terms(lower, CHANGE_VERBS)
@@ -181,6 +254,7 @@ def route_intent(request: str) -> RoutedRequest:
             requires_run=False,
             requires_approval=False,
             relevant_domains=relevant_domains,
+            target_resource_types=target_resource_types,
             rationale=rationale,
         )
 
@@ -194,6 +268,7 @@ def route_intent(request: str) -> RoutedRequest:
             requires_run=False,
             requires_approval=False,
             relevant_domains=relevant_domains,
+            target_resource_types=target_resource_types,
             rationale=[
                 "Multiple routing outcomes matched with the same score.",
                 f"Top candidates: {best_kind.value}.{best_capability.value} and "
@@ -208,6 +283,7 @@ def route_intent(request: str) -> RoutedRequest:
             requires_run=False,
             requires_approval=False,
             relevant_domains=relevant_domains,
+            target_resource_types=target_resource_types,
             rationale=[
                 "Matched signals were too weak for a safe routing decision.",
                 *candidate_rationales[(best_kind, best_capability)],
@@ -221,4 +297,5 @@ def route_intent(request: str) -> RoutedRequest:
         score=best_score,
         rationale=candidate_rationales[(best_kind, best_capability)],
         relevant_domains=best_domains,
+        target_resource_types=target_resource_types,
     )

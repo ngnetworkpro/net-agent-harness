@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .enums import Capability, NetworkDomain, RequestKind, RoutingStatus
+from .enums import Capability, NetworkDomain, RequestKind, ResourceType, RoutingStatus
 
 ALLOWED_ROUTING_COMBINATIONS = {
     (RequestKind.ASK, Capability.TOPOLOGY),
@@ -20,6 +20,7 @@ class RoutedRequest(BaseModel):
     requires_run: bool = False
     requires_approval: bool = False
     relevant_domains: list[NetworkDomain] = Field(default_factory=list)
+    target_resource_types: list[ResourceType] = Field(default_factory=list)
     rationale: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")

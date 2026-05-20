@@ -35,6 +35,18 @@ class NetworkDomain(str, Enum):
     OTHER = "other"
 
 
+class ResourceType(str, Enum):
+    SITE = "site"
+    DEVICE = "device"
+    INTERFACE = "interface"
+    VLAN = "vlan"
+    VRF = "vrf"
+    SUBNET = "subnet"
+    PREFIX = "prefix"
+    IP_ASSIGNMENT = "ip_assignment"
+    TOPOLOGY_LINK = "topology_link"
+
+
 class RequestKind(str, Enum):
     ASK = "ask"
     PLAN = "plan"
@@ -107,3 +119,35 @@ class WorkflowFamily(str, Enum):
     DISCOVERY = "discovery"
     CHANGE = "change"
     INCIDENT = "incident"
+
+
+class IntentStatus(str, Enum):
+    DRAFT = "draft"
+    APPROVED = "approved"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    BLOCKED = "blocked"
+    CANCELLED = "cancelled"
+    
+class ResourceLifecycleState(str, Enum):
+    """Lifecycle state for a managed network resource or planned change.
+
+    States follow the change pipeline from intent through verification:
+
+    - ``current``  – reflects what is actually deployed right now.
+    - ``intended`` – the desired end-state expressed as policy-level intent;
+                     not yet modelled as a concrete diff.
+    - ``planned``  – change has been modelled and diffed; not yet approved.
+                     IPAM allocations that are reserved for a planned change
+                     also sit here.
+    - ``approved`` – change has passed an approval gate; not yet applied.
+    - ``applied``  – change has been pushed to the device; not yet verified.
+    - ``verified`` – applied change has been confirmed to match intent.
+    """
+
+    CURRENT = "current"
+    INTENDED = "intended"
+    PLANNED = "planned"
+    APPROVED = "approved"
+    APPLIED = "applied"
+    VERIFIED = "verified"
