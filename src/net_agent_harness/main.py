@@ -360,9 +360,9 @@ async def _async_plan(request: str, operator: str = "local-user"):
     )
 
     artifact_path = artifact_store.save_model(run_id, "change_request", artifact)
-    if planned.plan_decision.decision.value == "no_op":
+    if planned.plan_decision and planned.plan_decision.decision.value == "no_op":
         reporter.update(run_stage.value, "completed", "✅ plan complete: no changes needed", artifact="change_request")
-    elif planned.plan_decision.decision.value == "apply":
+    elif planned.plan_decision and planned.plan_decision.decision.value == "apply":
         reporter.update(run_stage.value, "completed", f"✅ plan complete: ready for next steps. change request artifact at: {artifact_path}", artifact="change_request")
     else:
         reporter.update(run_stage.value, "blocked", f"❌ plan blocked. See artifact at: {artifact_path}", artifact="change_request")
