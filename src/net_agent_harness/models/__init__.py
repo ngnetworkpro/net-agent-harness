@@ -4,6 +4,7 @@ from .inventory import InventorySnapshot
 from .ipam import IpamSnapshot
 from .lifecycle import PlannedTopologyUpdate
 from .routing import RoutedRequest
+from .resources import ResourceRef, ResourceRelationship
 
 __all__ = [
     "ChangeRequest",
@@ -14,4 +15,6 @@ __all__ = [
     "ReadOnlyAnswer",
     "RoutedRequest",
     "PlannedTopologyUpdate",
+    "ResourceRef",
+    "ResourceRelationship",
 ]

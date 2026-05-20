@@ -15,7 +15,15 @@ change_planner = build_agent(
 @change_planner.system_prompt
 def planner_system_prompt(ctx: RunContext[RunContextData]) -> str:
     """Generate the system prompt dynamically using the resolved domain context."""
-    
+    route_summary = "Unavailable"
+    if ctx.deps.route_result is not None:
+        route_summary = (
+            f"kind={ctx.deps.route_result.kind.value if ctx.deps.route_result.kind else 'unknown'}, "
+            f"capability={ctx.deps.route_result.capability.value if ctx.deps.route_result.capability else 'unknown'}, "
+            f"domains={[d.value for d in ctx.deps.route_result.relevant_domains]}, "
+            f"target_resource_types={[r.value for r in ctx.deps.route_result.target_resource_types]}"
+        )
+
     # Static preamble (rules of engagement)
     preamble = [
         "You are a network change planner. ",
@@ -49,6 +57,8 @@ def planner_system_prompt(ctx: RunContext[RunContextData]) -> str:
         "{{ examples }}",
         "Inventory context: ",
         "{{ inventory_context }} ",
+        "Deterministic route context: ",
+        route_summary,
         "Output requirements: ",
         "Return structured output with these fields: ",
         "- decision: one of ['plan', 'blocked', 'question'] ",
@@ -60,6 +70,8 @@ def planner_system_prompt(ctx: RunContext[RunContextData]) -> str:
         "- devices ",
         "- interfaces ",
         "- scope ",
+        "- target_resources: typed resource refs with resource_type in [site, device, interface, vlan, vrf, subnet, prefix, ip_assignment, topology_link] ",
+        "- resource_relationships: use relationship_type in [site_to_device, interface_to_subnet, device_to_topology_link] when known ",
         "- desired_state: { operations: [{object_type: str, operation: str, attributes: dict}] } ",
         "- Group operations by object_type: vlan, interface, svi, etc. ",
         "- Operations: ensure_present, ensure_absent, set_access_vlan, set_trunk, update_trunk_allowed_vlans, etc. ",

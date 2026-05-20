@@ -35,6 +35,18 @@ class NetworkDomain(str, Enum):
     OTHER = "other"
 
 
+class ResourceType(str, Enum):
+    SITE = "site"
+    DEVICE = "device"
+    INTERFACE = "interface"
+    VLAN = "vlan"
+    VRF = "vrf"
+    SUBNET = "subnet"
+    PREFIX = "prefix"
+    IP_ASSIGNMENT = "ip_assignment"
+    TOPOLOGY_LINK = "topology_link"
+
+
 class RequestKind(str, Enum):
     ASK = "ask"
     PLAN = "plan"

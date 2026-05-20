@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from net_agent_harness.models.enums import Capability, NetworkDomain, RequestKind, RoutingStatus
+from net_agent_harness.models.enums import Capability, NetworkDomain, RequestKind, ResourceType, RoutingStatus
 from net_agent_harness.models.routing import RoutedRequest
 from net_agent_harness.orchestration.intent_router import route_intent
 
@@ -26,6 +26,7 @@ def test_route_intent_routes_change_requests_to_plan_change(
     assert routed.domain is domain
     assert routed.requires_run is True
     assert routed.requires_approval is True
+    assert routed.target_resource_types
 
 
 def test_route_intent_routes_topology_questions_to_direct_answer() -> None:
@@ -95,3 +96,4 @@ def test_routed_request_is_serializable() -> None:
     assert dumped["kind"] == RequestKind.PLAN
     assert dumped["capability"] == Capability.CHANGE
     assert dumped["relevant_domains"] == [NetworkDomain.VLAN]
+    assert ResourceType.VLAN in dumped["target_resource_types"]
