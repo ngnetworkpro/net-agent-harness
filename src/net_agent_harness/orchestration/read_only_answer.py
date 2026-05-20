@@ -34,4 +34,7 @@ def build_read_only_answer(
         question=question,
         answer=result["answer"],
         data=result.get("data", {}),
+        evidence=result.get("evidence", []),
+        missing_data=result.get("missing_data", []),
+        confidence=result.get("confidence", 1.0),
     )

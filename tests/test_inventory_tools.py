@@ -1,5 +1,13 @@
 from net_agent_harness.adapters.netbox_adapter import NetBoxAdapter
-from net_agent_harness.tools.inventory_tools import _normalize_device, _normalize_interface, _normalize_ip, _normalize_resolved_target, _infer_vendor_from_platform
+from net_agent_harness.tools.inventory_tools import (
+    _infer_vendor_from_platform,
+    _normalize_device,
+    _normalize_interface,
+    _normalize_ip,
+    _normalize_resolved_target,
+    lookup_device_context,
+    lookup_device_context_sync,
+)
 from net_agent_harness.models.enums import DeviceVendor
 
 
@@ -142,3 +150,79 @@ def test_normalize_resolved_target_vendor_none_when_platform_unknown():
 def test_normalize_resolved_target_vendor_none_when_no_platform():
     target = _normalize_resolved_target({"name": "sw1"})
     assert target.vendor is None
+
+
+def test_lookup_device_context_sync_netbox_normalizes_interfaces_and_ips():
+    from unittest.mock import patch
+
+    with patch("net_agent_harness.tools.inventory_tools.build_netbox_adapter_from_settings") as mock_builder:
+        class MockAdapter:
+            def get_devices(self, site=None, name=None, limit=1):
+                return {"results": [{"id": 1, "name": "sw1", "site": {"name": "HQ"}}]}
+
+            def get_interfaces(self, device_id):
+                assert device_id == 1
+                return {"results": [{"name": "Gig1/0/1", "type": {"label": "1000BASE-T"}}]}
+
+            def get_ip_addresses(self, device_id):
+                assert device_id == 1
+                return {"results": [{"address": "10.0.0.10/24", "assigned_object": {"name": "Vlan220"}}]}
+
+        mock_builder.return_value = MockAdapter()
+
+        result = lookup_device_context_sync("netbox", site="HQ", device_name="sw1")
+
+    assert result["source"] == "netbox"
+    assert result["interfaces"] == [
+        {
+            "id": None,
+            "name": "Gig1/0/1",
+            "type": "1000BASE-T",
+            "enabled": None,
+            "mtu": None,
+            "description": None,
+            "mode": None,
+            "untagged_vlan": None,
+            "tagged_vlans": [],
+        }
+    ]
+    assert result["ip_addresses"] == [
+        {
+            "id": None,
+            "address": "10.0.0.10/24",
+            "family": None,
+            "status": None,
+            "dns_name": None,
+            "interface": "Vlan220",
+        }
+    ]
+
+
+def test_lookup_device_context_netbox_normalizes_interfaces_and_ips():
+    from unittest.mock import patch
+
+    class _Deps:
+        inventory_source = "netbox"
+
+    class _Ctx:
+        deps = _Deps()
+
+    with patch("net_agent_harness.tools.inventory_tools.build_netbox_adapter_from_settings") as mock_builder:
+        class MockAdapter:
+            def get_devices(self, site=None, name=None, limit=1):
+                return {"results": [{"id": 1, "name": "sw1", "site": {"name": "HQ"}}]}
+
+            def get_interfaces(self, device_id):
+                assert device_id == 1
+                return {"results": [{"name": "Gig1/0/1", "type": {"label": "1000BASE-T"}}]}
+
+            def get_ip_addresses(self, device_id):
+                assert device_id == 1
+                return {"results": [{"address": "10.0.0.10/24", "assigned_object": {"name": "Vlan220"}}]}
+
+        mock_builder.return_value = MockAdapter()
+
+        result = lookup_device_context(_Ctx(), site="HQ", device_name="sw1")
+
+    assert result["interfaces"][0]["type"] == "1000BASE-T"
+    assert result["ip_addresses"][0]["interface"] == "Vlan220"
