@@ -1,6 +1,7 @@
 from pydantic import BaseModel, ConfigDict, Field
 
 from .common import ArtifactMeta
+from .enums import ResourceLifecycleState
 
 
 class IpamPrefix(BaseModel):
@@ -11,6 +12,13 @@ class IpamPrefix(BaseModel):
     vlan_id: int | None = None
     role: str | None = None
     status: str = "active"
+    lifecycle_state: ResourceLifecycleState = Field(
+        default=ResourceLifecycleState.CURRENT,
+        description=(
+            "Lifecycle state of this prefix. "
+            "Use 'planned' for prefixes reserved before device configuration exists."
+        ),
+    )
 
 
 class IpamAddressAssignment(BaseModel):
@@ -21,6 +29,14 @@ class IpamAddressAssignment(BaseModel):
     interface: str | None = None
     dns_name: str | None = None
     status: str = "active"
+    lifecycle_state: ResourceLifecycleState = Field(
+        default=ResourceLifecycleState.CURRENT,
+        description=(
+            "Lifecycle state of this address assignment. "
+            "Use 'planned' for allocations that are reserved or planned "
+            "before the device configuration exists."
+        ),
+    )
 
 
 class IpamSnapshot(BaseModel):
