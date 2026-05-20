@@ -2,6 +2,7 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from ..config import Settings
 from ..models.topology import TopologyUpdatePlan
 from ..policies.approvals import (
     WriteApprovalContext,
@@ -29,6 +30,7 @@ class TopologyAdapter(Protocol):
         request: TopologyWriteRequest,
         *,
         approval: WriteApprovalContext,
+        s: Settings | None = None,
     ) -> None:
         """Apply an approved topology write once deliberate implementations are enabled."""
 
@@ -41,6 +43,7 @@ class GuardedTopologyWriteAdapter:
         request: TopologyWriteRequest,
         *,
         approval: WriteApprovalContext,
+        s: Settings | None = None,
     ) -> None:
         _ = request
-        deny_unimplemented_write(WriteCapability.TOPOLOGY, approval)
+        deny_unimplemented_write(WriteCapability.TOPOLOGY, approval, s=s)

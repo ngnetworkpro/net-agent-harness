@@ -2,6 +2,7 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from ..config import Settings
 from ..models.inventory import InventorySnapshot
 from ..policies.approvals import (
     WriteApprovalContext,
@@ -29,6 +30,7 @@ class InventoryAdapter(Protocol):
         request: InventoryWriteRequest,
         *,
         approval: WriteApprovalContext,
+        s: Settings | None = None,
     ) -> None:
         """Apply an approved inventory write once deliberate implementations are enabled."""
 
@@ -41,6 +43,7 @@ class GuardedInventoryWriteAdapter:
         request: InventoryWriteRequest,
         *,
         approval: WriteApprovalContext,
+        s: Settings | None = None,
     ) -> None:
         _ = request
-        deny_unimplemented_write(WriteCapability.INVENTORY, approval)
+        deny_unimplemented_write(WriteCapability.INVENTORY, approval, s=s)

@@ -2,6 +2,7 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from ..config import Settings
 from ..models.ipam import IpamAddressAssignment, IpamPrefix, IpamSnapshot
 from ..policies.approvals import (
     WriteApprovalContext,
@@ -33,6 +34,7 @@ class IPAMAdapter(Protocol):
         request: IPAMWriteRequest,
         *,
         approval: WriteApprovalContext,
+        s: Settings | None = None,
     ) -> None:
         """Apply an approved IPAM write once deliberate implementations are enabled."""
 
@@ -45,6 +47,7 @@ class GuardedIPAMWriteAdapter:
         request: IPAMWriteRequest,
         *,
         approval: WriteApprovalContext,
+        s: Settings | None = None,
     ) -> None:
         _ = request
-        deny_unimplemented_write(WriteCapability.IPAM, approval)
+        deny_unimplemented_write(WriteCapability.IPAM, approval, s=s)
