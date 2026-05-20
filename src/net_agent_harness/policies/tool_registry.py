@@ -50,12 +50,17 @@ _EVALUATION_TOOLS: frozenset[str] = frozenset(
     }
 )
 
-# Tools reserved for future execution paths — not available to any capability yet.
+# Tools reserved for future execution or source-of-truth write paths.
+# They remain unavailable to all current capabilities until explicit
+# approval-gated orchestration is added.
 _EXECUTION_TOOLS: frozenset[str] = frozenset(
     {
         "apply_config",
         "execute_change",
         "push_config",
+        "write_inventory_snapshot",
+        "write_ipam_snapshot",
+        "apply_topology_update",
     }
 )
 
