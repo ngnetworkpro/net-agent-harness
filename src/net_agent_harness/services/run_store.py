@@ -10,6 +10,13 @@ WORKFLOW_STAGE_GRAPH: dict[WorkflowFamily, list[str]] = {
     WorkflowFamily.DISCOVERY: ["discover", "answer"],
     WorkflowFamily.CHANGE: ["plan", "render", "validate", "approval_pending", "execute"],
     WorkflowFamily.INCIDENT: ["incident", "review"],
+    WorkflowFamily.SITE: [
+        "discover",
+        "allocate_ipam",
+        "plan_topology",
+        "plan_changes",
+        "validate",
+    ],
 }
 
 

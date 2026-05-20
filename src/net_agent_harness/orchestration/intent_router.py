@@ -70,6 +70,41 @@ INCIDENT_TERMS = (
     "impact",
 )
 
+# Signals that distinguish "plan a new allocation" from "query existing state".
+IPAM_PLAN_TERMS = (
+    "allocate",
+    "reserve prefix",
+    "new subnet",
+    "provision subnet",
+    "plan ipam",
+    "propose prefix",
+    "request subnet",
+)
+
+# Signals for topology change planning (not just topology queries).
+TOPOLOGY_PLAN_TERMS = (
+    "topology change",
+    "topology update",
+    "add link",
+    "remove link",
+    "update adjacency",
+    "plan topology",
+    "topology plan",
+    "adjacency change",
+)
+
+# Signals for site provisioning workflow.
+SITE_PLAN_TERMS = (
+    "provision site",
+    "new site",
+    "site plan",
+    "onboard site",
+    "site provisioning",
+    "deploy site",
+    "build site",
+    "stand up site",
+)
+
 DEVICE_REFERENCE_RE = re.compile(r"\b[a-z]{1,8}\d+\b", re.IGNORECASE)
 INTERFACE_REFERENCE_RE = re.compile(r"\b(?:gi|ge|xe|et|fa|te)\S*\b", re.IGNORECASE)
 CIDR_RE = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}/\d{1,2}\b")
@@ -197,6 +232,9 @@ def route_intent(request: str) -> RoutedRequest:
     ipam_hits = _match_terms(lower, IPAM_TERMS)
     inventory_hits = _match_terms(lower, INVENTORY_TERMS)
     incident_hits = _match_terms(lower, INCIDENT_TERMS)
+    ipam_plan_hits = _match_terms(lower, IPAM_PLAN_TERMS)
+    topology_plan_hits = _match_terms(lower, TOPOLOGY_PLAN_TERMS)
+    site_plan_hits = _match_terms(lower, SITE_PLAN_TERMS)
 
     if DEVICE_REFERENCE_RE.search(request):
         inventory_hits = [*inventory_hits, "device-reference"]
@@ -210,6 +248,9 @@ def route_intent(request: str) -> RoutedRequest:
         + len(inventory_hits)
         + len(incident_hits)
         + len(domain_signal_hits)
+        + len(ipam_plan_hits)
+        + len(topology_plan_hits)
+        + len(site_plan_hits)
     )
 
     candidate_scores: dict[tuple[RequestKind, Capability], int] = {}
@@ -240,6 +281,38 @@ def route_intent(request: str) -> RoutedRequest:
         candidate = (RequestKind.REVIEW, Capability.INCIDENT)
         candidate_scores[candidate] = incident_score
         candidate_rationales[candidate] = incident_hits.copy()
+
+    # plan.ipam — explicit allocation / reservation requests (not informational queries).
+    ipam_plan_score = len(ipam_plan_hits) * 2 + len(ipam_hits)
+    if ipam_plan_hits:
+        candidate = (RequestKind.PLAN, Capability.IPAM)
+        candidate_scores[candidate] = ipam_plan_score
+        candidate_rationales[candidate] = [*ipam_plan_hits, *ipam_hits]
+
+    # plan.topology — explicit topology change requests (not informational queries).
+    topology_plan_score = len(topology_plan_hits) * 2 + len(topology_hits)
+    if topology_plan_hits:
+        candidate = (RequestKind.PLAN, Capability.TOPOLOGY)
+        candidate_scores[candidate] = topology_plan_score
+        candidate_rationales[candidate] = [*topology_plan_hits, *topology_hits]
+
+    # plan.site — site provisioning workflow.
+    # Detect explicit site-plan terms OR the combination of a change verb
+    # with a "site" inventory signal and no domain signals (to avoid
+    # misrouting device-level VLAN/ACL changes as site-provisioning).
+    # Explicit SITE_PLAN_TERMS use a multiplier of 6 to ensure they beat
+    # domain-signal-boosted change scores when both appear in the text.
+    site_in_text = "site" in lower
+    site_plan_score = len(site_plan_hits) * 6 + (
+        2 if (site_in_text and change_hits and not relevant_domains) else 0
+    ) + len(inventory_hits)
+    site_plan_condition = site_plan_hits or (
+        change_hits and site_in_text and not relevant_domains and not question_like
+    )
+    if site_plan_condition:
+        candidate = (RequestKind.PLAN, Capability.SITE)
+        candidate_scores[candidate] = site_plan_score
+        candidate_rationales[candidate] = [*site_plan_hits, *inventory_hits, *change_hits]
 
     if not candidate_scores:
         status = RoutingStatus.NEEDS_CLARIFICATION if signal_count else RoutingStatus.BLOCKED

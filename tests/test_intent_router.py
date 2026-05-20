@@ -97,3 +97,38 @@ def test_routed_request_is_serializable() -> None:
     assert dumped["capability"] == Capability.CHANGE
     assert dumped["relevant_domains"] == [NetworkDomain.VLAN]
     assert ResourceType.VLAN in dumped["target_resource_types"]
+
+
+def test_route_intent_routes_ipam_plan_requests() -> None:
+    routed = route_intent("Allocate a new subnet from 10.10.0.0/16")
+
+    assert routed.status is RoutingStatus.ROUTED
+    assert routed.kind is RequestKind.PLAN
+    assert routed.capability is Capability.IPAM
+
+
+def test_route_intent_routes_topology_plan_requests() -> None:
+    routed = route_intent("Plan a topology update to add a link between sw1 and core1")
+
+    assert routed.status is RoutingStatus.ROUTED
+    assert routed.kind is RequestKind.PLAN
+    assert routed.capability is Capability.TOPOLOGY
+
+
+def test_route_intent_routes_site_plan_requests() -> None:
+    routed = route_intent("Provision a new branch site BRANCH-07 with management and server subnets")
+
+    assert routed.status is RoutingStatus.ROUTED
+    assert routed.kind is RequestKind.PLAN
+    assert routed.capability is Capability.SITE
+
+
+def test_route_intent_routes_explicit_site_provisioning_terms() -> None:
+    for phrase in [
+        "Provision site BRANCH-08 with three VLANs",
+        "Deploy site HQ-EXPANSION with firewall and access switches",
+        "Build site EAST-DC for server workloads",
+    ]:
+        routed = route_intent(phrase)
+        assert routed.status is RoutingStatus.ROUTED, f"Failed for: {phrase!r}"
+        assert routed.capability is Capability.SITE, f"Wrong capability for: {phrase!r}"

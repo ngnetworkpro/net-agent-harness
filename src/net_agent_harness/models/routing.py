@@ -6,6 +6,9 @@ ALLOWED_ROUTING_COMBINATIONS = {
     (RequestKind.ASK, Capability.TOPOLOGY),
     (RequestKind.ASK, Capability.IPAM),
     (RequestKind.PLAN, Capability.CHANGE),
+    (RequestKind.PLAN, Capability.IPAM),
+    (RequestKind.PLAN, Capability.TOPOLOGY),
+    (RequestKind.PLAN, Capability.SITE),
     (RequestKind.REVIEW, Capability.INCIDENT),
 }
 

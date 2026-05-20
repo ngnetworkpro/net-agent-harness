@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from .common import ArtifactMeta, ScopeRef
-from .enums import ChangeRisk, TargetScope, PlanDecisionType, NetworkDomain, SwitchportMode, DeviceVendor
+from .enums import ChangeRisk, TargetScope, PlanDecisionType, NetworkDomain, SwitchportMode, DeviceVendor, ResourceLifecycleState
 from .resources import ResourceRef, ResourceRelationship
 from typing import Any, Union, Literal
 
@@ -197,6 +197,45 @@ class PlannedChange(BaseModel):
     )
 
 
+class ChangeRequestDependency(BaseModel):
+    """A structured cross-domain dependency for a change request.
+
+    Used by the dependency resolver to check whether upstream artifacts
+    (IPAM allocations, topology plans, device availability) are in the
+    required lifecycle state before rendering is allowed.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    dependency_type: str = Field(
+        description=(
+            "Type of dependency: 'ipam_allocation', 'topology_plan', "
+            "'device_availability', or 'policy_check'."
+        )
+    )
+    description: str = Field(description="Human-readable description of this dependency")
+    artifact_id: str | None = Field(
+        default=None,
+        description="Artifact ID of the upstream artifact this depends on",
+    )
+    run_id: str | None = Field(
+        default=None,
+        description="Run ID that produced the upstream artifact",
+    )
+    required_lifecycle_state: ResourceLifecycleState | None = Field(
+        default=None,
+        description="Minimum required lifecycle state; None means any observed state is acceptable",
+    )
+    current_lifecycle_state: ResourceLifecycleState | None = Field(
+        default=None,
+        description="Observed current lifecycle state of the upstream artifact",
+    )
+    blocking: bool = Field(
+        default=True,
+        description="When True, an unresolved dependency blocks rendering",
+    )
+
+
 class ChangeRequest(BaseModel):
     model_config = {"extra": "forbid"}
     """
@@ -216,8 +255,13 @@ class ChangeRequest(BaseModel):
     risk: ChangeRisk
     assumptions: list[str] = Field(default_factory=list)
     dependencies: list[str] = Field(default_factory=list)
+    cross_domain_dependencies: list[ChangeRequestDependency] = Field(
+        default_factory=list,
+        description="Structured cross-domain dependencies that must be resolved before rendering",
+    )
     rollback_plan: RollbackPlan
     plan_decision: PlanDecision | None = Field(
         default=None,
         description="Structured no_op/apply/blocked decision carried through from the planner.",
     )
+
