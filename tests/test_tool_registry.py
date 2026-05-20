@@ -21,6 +21,9 @@ class TestIsToolAllowed:
         assert is_tool_allowed(Capability.TOPOLOGY, "apply_config") is False
         assert is_tool_allowed(Capability.TOPOLOGY, "execute_change") is False
         assert is_tool_allowed(Capability.TOPOLOGY, "push_config") is False
+        assert is_tool_allowed(Capability.TOPOLOGY, "write_inventory_snapshot") is False
+        assert is_tool_allowed(Capability.TOPOLOGY, "write_ipam_snapshot") is False
+        assert is_tool_allowed(Capability.TOPOLOGY, "apply_topology_update") is False
 
     def test_topology_denies_ipam_tools(self):
         assert is_tool_allowed(Capability.TOPOLOGY, "find_prefix") is False
@@ -35,6 +38,9 @@ class TestIsToolAllowed:
     def test_ipam_denies_execution_tools(self):
         assert is_tool_allowed(Capability.IPAM, "apply_config") is False
         assert is_tool_allowed(Capability.IPAM, "push_config") is False
+        assert is_tool_allowed(Capability.IPAM, "write_inventory_snapshot") is False
+        assert is_tool_allowed(Capability.IPAM, "write_ipam_snapshot") is False
+        assert is_tool_allowed(Capability.IPAM, "apply_topology_update") is False
 
     def test_ipam_denies_inventory_tools(self):
         assert is_tool_allowed(Capability.IPAM, "lookup_inventory") is False
@@ -55,6 +61,9 @@ class TestIsToolAllowed:
     def test_change_denies_execution_tools(self):
         assert is_tool_allowed(Capability.CHANGE, "apply_config") is False
         assert is_tool_allowed(Capability.CHANGE, "push_config") is False
+        assert is_tool_allowed(Capability.CHANGE, "write_inventory_snapshot") is False
+        assert is_tool_allowed(Capability.CHANGE, "write_ipam_snapshot") is False
+        assert is_tool_allowed(Capability.CHANGE, "apply_topology_update") is False
 
     # --- INCIDENT ---
     def test_incident_allows_inventory_and_topology(self):
@@ -63,6 +72,9 @@ class TestIsToolAllowed:
 
     def test_incident_denies_execution_tools(self):
         assert is_tool_allowed(Capability.INCIDENT, "apply_config") is False
+        assert is_tool_allowed(Capability.INCIDENT, "write_inventory_snapshot") is False
+        assert is_tool_allowed(Capability.INCIDENT, "write_ipam_snapshot") is False
+        assert is_tool_allowed(Capability.INCIDENT, "apply_topology_update") is False
 
     # --- unknown tool ---
     def test_unknown_tool_always_denied(self):
@@ -103,3 +115,7 @@ class TestAssertToolAllowed:
     def test_denied_change_execution_raises(self):
         with pytest.raises(PermissionError, match="push_config"):
             assert_tool_allowed(Capability.CHANGE, "push_config")
+
+    def test_denied_source_of_truth_write_raises(self):
+        with pytest.raises(PermissionError, match="apply_topology_update"):
+            assert_tool_allowed(Capability.TOPOLOGY, "apply_topology_update")
