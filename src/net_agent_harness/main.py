@@ -36,7 +36,9 @@ from .orchestration.dispatcher import DispatchMode, dispatch_request
 from .orchestration.intent_router import route_intent
 from .orchestration.read_only_answer import build_read_only_answer
 from .orchestration.domain_loader import load_domain_context, DomainLoadError
-from .models.enums import Capability
+from .orchestration.rollback_builder import build_rollback_plan
+from .orchestration.scope_validator import ScopeValidationError, validate_target_scope
+from .models.enums import Capability, PlanDecisionType
 
 app = typer.Typer(help='Network agent harness prototype')
 run_app = typer.Typer(help='Run end-to-end stage pipelines')
@@ -84,10 +86,15 @@ def _merge_unique_resources(
     planned_resources: list[ResourceRef],
     authoritative_resources: list[ResourceRef],
 ) -> list[ResourceRef]:
+    """Merge resource refs, deduplicating by canonical identity.
+
+    Authoritative entries are processed first so they win on key collision
+    (e.g. a DeviceResourceRef with site_name populated beats one without).
+    """
     merged: list[ResourceRef] = []
     seen: set[str] = set()
-    for resource in [*planned_resources, *authoritative_resources]:
-        key = resource.model_dump_json()
+    for resource in [*authoritative_resources, *planned_resources]:
+        key = resource.canonical_key()
         if key in seen:
             continue
         seen.add(key)
@@ -99,10 +106,16 @@ def _merge_unique_relationships(
     planned_relationships: list[ResourceRelationship],
     authoritative_relationships: list[ResourceRelationship],
 ) -> list[ResourceRelationship]:
+    """Merge relationships, deduplicating by canonical identity.
+
+    Authoritative entries are processed first so they win on key collision
+    (e.g. a site_to_device with site_name populated on the device ref
+    beats one where site_name is null).
+    """
     merged: list[ResourceRelationship] = []
     seen: set[str] = set()
-    for relationship in [*planned_relationships, *authoritative_relationships]:
-        key = relationship.model_dump_json()
+    for relationship in [*authoritative_relationships, *planned_relationships]:
+        key = relationship.canonical_key()
         if key in seen:
             continue
         seen.add(key)
@@ -336,6 +349,30 @@ async def _async_plan(request: str, operator: str = "local-user"):
         resource_relationships,
     )
 
+    # Build structured rollback from the forward diff when applicable
+    if (
+        planned.plan_decision is not None
+        and planned.plan_decision.decision == PlanDecisionType.APPLY
+    ):
+        rollback = build_rollback_plan(planned.plan_decision)
+    else:
+        rollback = planned.rollback_plan
+
+    # Validate and correct target_scope
+    try:
+        validated_scope = validate_target_scope(
+            target_scope=planned.target_scope,
+            scope_ref=planned.scope,
+            resolved_targets=resolved_targets,
+            target_resources=merged_resources,
+        )
+    except ScopeValidationError as exc:
+        run_store.update_stage(
+            run_id, run_stage.value, "blocked",
+            reason=str(exc),
+        )
+        raise typer.BadParameter(str(exc)) from exc
+
     artifact = ChangeRequest(
         meta=ArtifactMeta(
             run_id=run_id,
@@ -346,7 +383,7 @@ async def _async_plan(request: str, operator: str = "local-user"):
         ),
         domain=route.domain,
         scope=planned.scope,
-        target_scope=planned.target_scope,
+        target_scope=validated_scope,
         resolved_targets=resolved_targets,
         target_resources=merged_resources,
         resource_relationships=merged_relationships,
@@ -355,7 +392,7 @@ async def _async_plan(request: str, operator: str = "local-user"):
         risk=planned.risk,
         assumptions=planned.assumptions,
         dependencies=planned.dependencies,
-        rollback_plan=planned.rollback_plan,
+        rollback_plan=rollback,
         plan_decision=planned.plan_decision,
     )
 

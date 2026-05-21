@@ -99,6 +99,27 @@ class RequestedChange(BaseModel):
     )
 
 
+class RollbackStep(BaseModel):
+    """A single structured rollback instruction tied to a forward operation."""
+
+    model_config = {"extra": "forbid"}
+    order: int = Field(
+        description="Execution order, 1-indexed. Dependents first (interface → SVI → VLAN)."
+    )
+    object_type: Literal["vlan", "svi", "interface"] = Field(
+        description="Object type this step reverses"
+    )
+    operation: str = Field(
+        description="Reverse operation, e.g. 'remove', 'create', 'reset_access_vlan'"
+    )
+    target_device: str = Field(description="Device name")
+    attributes: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Key attributes for the rollback (vlan_id, interface, ip_address, etc.)",
+    )
+    description: str = Field(description="Human-readable rollback instruction")
+
+
 class RollbackPlan(BaseModel):
     model_config = {"extra": "forbid"}
     summary: str = Field(
@@ -111,6 +132,10 @@ class RollbackPlan(BaseModel):
     rollback_steps: list[str] = Field(
         default_factory=list,
         description="Concrete rollback actions; include at least one step when feasible"
+    )
+    structured_rollback_steps: list[RollbackStep] = Field(
+        default_factory=list,
+        description="Operation-specific rollback steps generated from the forward diff",
     )
 
 

@@ -1,11 +1,9 @@
 from collections.abc import Callable
-from typing import Any
 from ..models.changes import (
     DeviceChange,
     PlanDecision,
     VlanChange,
     VlanSpec,
-    PortSpec,
     VlanChangeOperation,
     SviChangeOperation,
     InterfaceChangeOperation,
@@ -214,17 +212,41 @@ def _evaluate_vlan_operations(
         if operation == "ensure_present":
             if vlan_id is None:
                 return _blocked("vlan_id is required for vlan ensure_present operation.")
-            device_changes = compute_vlan_diff(
-                intent={
-                    "vlan_id": vlan_id,
-                    "vlan_name": vlan_name,
-                    "interfaces": [],
-                },
-                current_state=device,
-            )
-            changes = device_changes[0].changes
-            if changes.vlans_to_create:
-                all_device_changes.extend(device_changes)
+            if vlan_exists(device, vlan_id):
+                # VLAN already present — emit explicit skip
+                all_device_changes.append(DeviceChange(
+                    device=device_name,
+                    domain=NetworkDomain.VLAN,
+                    changes=VlanChange(
+                        operations=[
+                            VlanChangeOperation(
+                                change_type="vlan",
+                                op="create",
+                                vlan_id=vlan_id,
+                                name=vlan_name,
+                                status="skip",
+                                reason=f"VLAN {vlan_id} already exists on {device_name}.",
+                            )
+                        ]
+                    ),
+                ))
+            else:
+                all_device_changes.append(DeviceChange(
+                    device=device_name,
+                    domain=NetworkDomain.VLAN,
+                    changes=VlanChange(
+                        operations=[
+                            VlanChangeOperation(
+                                change_type="vlan",
+                                op="create",
+                                vlan_id=vlan_id,
+                                name=vlan_name,
+                                status="apply",
+                                reason=f"VLAN {vlan_id} does not exist on {device_name}.",
+                            )
+                        ]
+                    ),
+                ))
                 reason_parts.append(f"VLAN {vlan_id} must be created on {device_name}")
         elif operation == "ensure_absent":
             if vlan_id is None:
@@ -241,11 +263,30 @@ def _evaluate_vlan_operations(
                                 vlan_id=vlan_id,
                                 name=vlan_name,
                                 status="apply",
+                                reason=f"VLAN {vlan_id} exists on {device_name} and must be removed.",
                             )
                         ]
                     ),
                 ))
                 reason_parts.append(f"VLAN {vlan_id} must be deleted from {device_name}")
+            else:
+                # VLAN already absent — emit explicit skip
+                all_device_changes.append(DeviceChange(
+                    device=device_name,
+                    domain=NetworkDomain.VLAN,
+                    changes=VlanChange(
+                        operations=[
+                            VlanChangeOperation(
+                                change_type="vlan",
+                                op="remove",
+                                vlan_id=vlan_id,
+                                name=vlan_name,
+                                status="skip",
+                                reason=f"VLAN {vlan_id} does not exist on {device_name}.",
+                            )
+                        ]
+                    ),
+                ))
         else:
             return _blocked(f"Unsupported vlan operation '{operation}'.")
 
@@ -275,10 +316,50 @@ def _evaluate_vlan_operations(
             )
             changes = device_changes[0].changes
             if changes.ports_to_update:
-                all_device_changes.extend(device_changes)
+                all_device_changes.append(DeviceChange(
+                    device=device_name,
+                    domain=NetworkDomain.VLAN,
+                    changes=VlanChange(
+                        operations=[
+                            InterfaceChangeOperation(
+                                change_type="interface",
+                                op="set_access_vlan",
+                                interface=iface_name,
+                                vlan_id=access_vlan,
+                                status="apply",
+                                reason=(
+                                    f"Interface {iface_name} is not in access VLAN"
+                                    f" {access_vlan} on {device_name}."
+                                ),
+                            )
+                        ]
+                    ),
+                ))
                 reason_parts.append(
-                    f"Interface {iface_name} requires access VLAN {access_vlan} update on {device_name}"
+                    f"Interface {iface_name} requires access VLAN {access_vlan}"
+                    f" update on {device_name}"
                 )
+            else:
+                # Interface already correct — emit explicit skip
+                all_device_changes.append(DeviceChange(
+                    device=device_name,
+                    domain=NetworkDomain.VLAN,
+                    changes=VlanChange(
+                        operations=[
+                            InterfaceChangeOperation(
+                                change_type="interface",
+                                op="set_access_vlan",
+                                interface=iface_name,
+                                vlan_id=access_vlan,
+                                status="skip",
+                                reason=(
+                                    f"Interface {iface_name} is already in access"
+                                    f" VLAN {access_vlan} on {device_name}."
+                                ),
+                            )
+                        ]
+                    ),
+                ))
         elif operation == "set_trunk":
             device_changes = compute_vlan_diff(
                 intent={
@@ -294,8 +375,49 @@ def _evaluate_vlan_operations(
             )
             changes = device_changes[0].changes
             if changes.ports_to_update:
-                all_device_changes.extend(device_changes)
-                reason_parts.append(f"Interface {iface_name} requires trunk update on {device_name}")
+                all_device_changes.append(DeviceChange(
+                    device=device_name,
+                    domain=NetworkDomain.VLAN,
+                    changes=VlanChange(
+                        operations=[
+                            InterfaceChangeOperation(
+                                change_type="interface",
+                                op="set_trunk",
+                                interface=iface_name,
+                                vlan_id=access_vlan or 1,
+                                status="apply",
+                                reason=(
+                                    f"Interface {iface_name} requires trunk"
+                                    f" update on {device_name}."
+                                ),
+                            )
+                        ]
+                    ),
+                ))
+                reason_parts.append(
+                    f"Interface {iface_name} requires trunk update on {device_name}"
+                )
+            else:
+                # Trunk already correct — emit explicit skip
+                all_device_changes.append(DeviceChange(
+                    device=device_name,
+                    domain=NetworkDomain.VLAN,
+                    changes=VlanChange(
+                        operations=[
+                            InterfaceChangeOperation(
+                                change_type="interface",
+                                op="set_trunk",
+                                interface=iface_name,
+                                vlan_id=access_vlan or 1,
+                                status="skip",
+                                reason=(
+                                    f"Interface {iface_name} trunk is already correctly"
+                                    f" configured on {device_name}."
+                                ),
+                            )
+                        ]
+                    ),
+                ))
         else:
             return _blocked(f"Unsupported interface operation '{operation}'.")
 
@@ -368,6 +490,7 @@ def _evaluate_vlan_operations(
                                     prefix_length=prefix_length,
                                     interface=iface_name,
                                     status="apply",
+                                    reason=f"SVI for VLAN {vlan_id} must be updated on {device_name}.",
                                 )
                             ]
                         )
@@ -388,6 +511,7 @@ def _evaluate_vlan_operations(
                                 prefix_length=prefix_length,
                                 interface=iface_name,
                                 status="apply",
+                                reason=f"SVI for VLAN {vlan_id} must be created on {device_name}.",
                             )
                         ]
                     )
@@ -427,6 +551,7 @@ def _evaluate_vlan_operations(
                                 vlan_id=vlan_id,
                                 interface=existing_iface.name,
                                 status="apply",
+                                reason=f"SVI for VLAN {vlan_id} exists on {device_name} and must be removed.",
                             )
                         ]
                     )
@@ -461,14 +586,17 @@ def _evaluate_vlan_operations(
     blocked_ops = [op for op in ops if op.status == "blocked"]
     apply_ops = [op for op in ops if op.status == "apply"]
 
-    if blocked_ops:
+    if blocked_ops and not apply_ops:
+        # All actionable operations are blocked — plan-level block
         reasons = [op.reason for op in blocked_ops if op.reason]
         reason_str = "; ".join(reasons) if reasons else f"Blocked operations on {device_name}"
         return _blocked(reason_str, merged_changes)
 
     if not apply_ops:
+        # Only skip operations remain — no-op
         return _no_op(f"No changes required for {device_name}.")
 
+    # Mixed or all-apply: proceed with apply decision
     platform_errors = validate_platform_constraints(device.platform, merged_changes)
     if platform_errors:
         return _blocked("; ".join(platform_errors), merged_changes)
