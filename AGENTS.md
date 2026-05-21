@@ -224,6 +224,10 @@ When helping in this repository:
 - Prefer packages already in the dependency tree. Flag any new addition explicitly in the PR.
 - Do not pin to versions with known CVEs.
 
+### Virtual environment and tool usage
+- Always use `uv` for dependency and environment management.
+- All commands and scripts must be run within the virtual environment (e.g., using `uv run <command>` or after activating the `.venv` virtual environment).
+
 ### Error handling
 - All file I/O (YAML loading, JSON reading, artifact writes) must handle missing files
   with explicit, descriptive errors — not silent fallbacks or bare `except` blocks.
