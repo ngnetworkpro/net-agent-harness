@@ -1,11 +1,7 @@
 from net_agent_harness.models.changes import (
-    DeviceChange,
-    VlanChange,
-    VlanChangeOperation,
     SviChangeOperation,
-    InterfaceChangeOperation,
 )
-from net_agent_harness.models.enums import NetworkDomain, PlanDecisionType
+from net_agent_harness.models.enums import PlanDecisionType
 from net_agent_harness.tools.evaluation import evaluate_intent_state
 
 

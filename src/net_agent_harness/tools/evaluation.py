@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from typing import Any
 from ..models.changes import (
     DeviceChange,
     PlanDecision,
@@ -123,6 +124,61 @@ def normalize_vlan_diff(vlans: list[VlanSpec]) -> list[VlanSpec]:
     return sorted(best.values(), key=lambda v: v.id)
 
 
+def _get_value(obj: Any, key: str, default: Any = None) -> Any:
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def _operation_status_priority(op: ChangeOperation) -> int:
+    status_priority = {"apply": 3, "blocked": 2, "skip": 1}
+    return status_priority.get(op.status, 0)
+
+
+def _operation_completeness(op: ChangeOperation) -> int:
+    candidates = [
+        getattr(op, "name", None),
+        getattr(op, "interface", None),
+        getattr(op, "ip_address", None),
+        getattr(op, "prefix_length", None),
+    ]
+    return sum(1 for value in candidates if value not in (None, ""))
+
+
+def _operation_identity_key(op: ChangeOperation) -> tuple[Any, ...]:
+    if isinstance(op, VlanChangeOperation):
+        return ("vlan", op.op, op.vlan_id)
+    if isinstance(op, SviChangeOperation):
+        return ("svi", op.op, op.vlan_id, op.interface, op.ip_address, op.prefix_length)
+    if isinstance(op, InterfaceChangeOperation):
+        return ("interface", op.op, op.interface, op.vlan_id)
+    return (
+        op.change_type,
+        op.op,
+        getattr(op, "vlan_id", None),
+        getattr(op, "interface", None),
+    )
+
+
+def _operation_sort_key(op: ChangeOperation) -> tuple[Any, ...]:
+    change_type_priority = {"vlan": 0, "svi": 1, "interface": 2}
+    return (
+        change_type_priority.get(op.change_type, 99),
+        getattr(op, "vlan_id", 0),
+        getattr(op, "interface", "") or "",
+        op.op,
+        -_operation_status_priority(op),
+    )
+
+
+def _prefer_operation(existing: ChangeOperation, candidate: ChangeOperation) -> ChangeOperation:
+    existing_rank = (_operation_status_priority(existing), _operation_completeness(existing))
+    candidate_rank = (_operation_status_priority(candidate), _operation_completeness(candidate))
+    if candidate_rank > existing_rank:
+        return candidate
+    return existing
+
+
 def _merge_device_changes(all_changes: list[DeviceChange]) -> list[DeviceChange]:
     if not all_changes:
         return []
@@ -134,37 +190,27 @@ def _merge_device_changes(all_changes: list[DeviceChange]) -> list[DeviceChange]
     for dc in all_changes:
         merged_ops.extend(dc.changes.operations)
 
-    # Deduplicate operations
-    # Key by (change_type, op, vlan_id, interface)
-    deduped: dict[tuple, ChangeOperation] = {}
+    deduped: dict[tuple[Any, ...], ChangeOperation] = {}
     for op in merged_ops:
-        key = (
-            op.change_type,
-            op.op,
-            getattr(op, "vlan_id", None),
-            getattr(op, "interface", None),
-        )
+        key = _operation_identity_key(op)
         existing = deduped.get(key)
         if existing is None:
             deduped[key] = op
-        elif isinstance(op, VlanChangeOperation) and isinstance(existing, VlanChangeOperation):
-            # Prefer the one with a non-empty name
-            if not existing.name and op.name:
-                deduped[key] = op
         else:
-            # For other operations, we can keep the existing or update.
-            pass
+            deduped[key] = _prefer_operation(existing, op)
+
+    sorted_ops = sorted(deduped.values(), key=_operation_sort_key)
 
     return [DeviceChange(
         device=device_name,
         domain=domain,
-        changes=VlanChange(operations=list(deduped.values())),
+        changes=VlanChange(operations=sorted_ops),
     )]
 
 
-def _op_matches_device(op: dict, device_name: str) -> bool:
-    target_device = op.get("target_device")
-    target_devices = op.get("target_devices")
+def _op_matches_device(op: dict[str, Any] | Any, device_name: str) -> bool:
+    target_device = _get_value(op, "target_device")
+    target_devices = _get_value(op, "target_devices")
     
     if target_device is not None and target_device != device_name:
         return False
@@ -199,15 +245,25 @@ def _evaluate_vlan_operations(
     all_device_changes: list[DeviceChange] = []
     reason_parts: list[str] = []
 
-    vlan_ops = [op for op in operations if op.get("object_type") == "vlan" and _op_matches_device(op, device_name)]
-    interface_ops = [op for op in operations if op.get("object_type") == "interface" and _op_matches_device(op, device_name)]
-    svi_ops = [op for op in operations if op.get("object_type") == "svi" and _op_matches_device(op, device_name)]
+    vlan_ops: list[Any] = []
+    interface_ops: list[Any] = []
+    svi_ops: list[Any] = []
+    for op in operations:
+        if not _op_matches_device(op, device_name):
+            continue
+        object_type = _get_value(op, "object_type")
+        if object_type == "vlan":
+            vlan_ops.append(op)
+        elif object_type == "interface":
+            interface_ops.append(op)
+        elif object_type == "svi":
+            svi_ops.append(op)
 
     for vlan_op in vlan_ops:
-        operation = vlan_op.get("operation")
-        attrs = vlan_op.get("attributes", {})
-        vlan_id = attrs.get("vlan_id")
-        vlan_name = attrs.get("name", "")
+        operation = _get_value(vlan_op, "operation")
+        attrs = _get_value(vlan_op, "attributes", {})
+        vlan_id = _get_value(attrs, "vlan_id")
+        vlan_name = _get_value(attrs, "name", "")
 
         if operation == "ensure_present":
             if vlan_id is None:
@@ -291,10 +347,10 @@ def _evaluate_vlan_operations(
             return _blocked(f"Unsupported vlan operation '{operation}'.")
 
     for iface_op in interface_ops:
-        operation = iface_op.get("operation")
-        attrs = iface_op.get("attributes", {})
-        iface_name = attrs.get("name")
-        access_vlan = attrs.get("access_vlan")
+        operation = _get_value(iface_op, "operation")
+        attrs = _get_value(iface_op, "attributes", {})
+        iface_name = _get_value(attrs, "name")
+        access_vlan = _get_value(attrs, "access_vlan")
 
         if iface_name is None:
             return _blocked("interface name is required for interface operations.")
@@ -422,11 +478,11 @@ def _evaluate_vlan_operations(
             return _blocked(f"Unsupported interface operation '{operation}'.")
 
     for svi_op in svi_ops:
-        operation = svi_op.get("operation")
-        attrs = svi_op.get("attributes", {})
-        vlan_id = attrs.get("vlan_id")
-        ip_address = attrs.get("ip_address")
-        prefix_length = attrs.get("prefix_length")
+        operation = _get_value(svi_op, "operation")
+        attrs = _get_value(svi_op, "attributes", {})
+        vlan_id = _get_value(attrs, "vlan_id")
+        ip_address = _get_value(attrs, "ip_address")
+        prefix_length = _get_value(attrs, "prefix_length")
 
         if vlan_id is None:
             return _blocked("vlan_id is required for svi operations.")

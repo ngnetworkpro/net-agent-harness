@@ -86,6 +86,26 @@ class TestScopeCorrection:
         )
         assert result == TargetScope.ambiguous
 
+    def test_device_resource_implies_device_scope(self) -> None:
+        """Device resource evidence should imply device scope."""
+        result = validate_target_scope(
+            target_scope=TargetScope.ambiguous,
+            scope_ref=ScopeRef(site=None, device_names=[]),
+            resolved_targets=[_target("sw1")],
+            target_resources=[DeviceResourceRef(device_name="sw1", site_name="HQ")],
+        )
+        assert result == TargetScope.device
+
+    def test_site_resource_implies_site_scope(self) -> None:
+        """Site resource evidence should imply site scope when targets exist."""
+        result = validate_target_scope(
+            target_scope=TargetScope.ambiguous,
+            scope_ref=ScopeRef(site=None, device_names=[]),
+            resolved_targets=[_target("sw1"), _target("sw2")],
+            target_resources=[SiteResourceRef(site_name="HQ")],
+        )
+        assert result == TargetScope.site
+
 
 class TestScopeErrors:
     def test_device_scope_no_targets_raises(self) -> None:

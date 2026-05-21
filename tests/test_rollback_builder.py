@@ -15,7 +15,6 @@ from net_agent_harness.models.changes import (
     DeviceChange,
     InterfaceChangeOperation,
     PlanDecision,
-    RollbackStep,
     SviChangeOperation,
     VlanChange,
     VlanChangeOperation,

@@ -226,7 +226,8 @@ class VlanChange(BaseModel):
             iface = p.get("interface") if isinstance(p, dict) else getattr(p, "interface", None)
             v_id = p.get("vlan_id") if isinstance(p, dict) else getattr(p, "vlan_id", None)
             mode = p.get("mode") if isinstance(p, dict) else getattr(p, "mode", None)
-            op = "set_access_vlan" if mode == "access" else "set_trunk"
+            mode_value = mode.value if isinstance(mode, SwitchportMode) else mode
+            op = "set_access_vlan" if mode_value == SwitchportMode.ACCESS.value else "set_trunk"
             operations.append({
                 "change_type": "interface",
                 "op": op,
@@ -406,4 +407,3 @@ class ChangeRequest(BaseModel):
         default=None,
         description="Structured no_op/apply/blocked decision carried through from the planner.",
     )
-

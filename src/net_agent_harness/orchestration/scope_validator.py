@@ -72,13 +72,21 @@ def validate_target_scope(
     has_device_names = bool(scope_ref.device_names)
     has_site = scope_ref.site is not None
     has_targets = bool(resolved_targets)
+    has_device_resources = any(
+        getattr(resource, "resource_type", None) == "device"
+        for resource in target_resources
+    )
+    has_site_resources = any(
+        getattr(resource, "resource_type", None) == "site"
+        for resource in target_resources
+    )
 
     # Determine expected scope from the evidence
-    if has_device_names:
+    if has_device_names or has_device_resources:
         expected = TargetScope.device
-    elif has_site and has_targets:
+    elif (has_site or has_site_resources) and has_targets:
         expected = TargetScope.site
-    elif has_site and not has_targets:
+    elif (has_site or has_site_resources) and not has_targets:
         # Site was named but no devices resolved — this is an error condition.
         # (The caller should have already blocked on empty resolved_targets,
         # but we validate here for safety.)
