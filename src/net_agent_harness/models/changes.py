@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from .common import ArtifactMeta, ScopeRef
 from .enums import ChangeRisk, TargetScope, PlanDecisionType, NetworkDomain, SwitchportMode, DeviceVendor, ResourceLifecycleState
 from .resources import ResourceRef, ResourceRelationship
@@ -17,19 +17,41 @@ class InterfaceAttributes(BaseModel):
     native_vlan: int | None = None
     allowed_vlans: list[int] = Field(default_factory=list)
 
+class SviAttributes(BaseModel):
+    model_config = {"extra": "forbid"}
+    vlan_id: int | None = None
+    ip_address: str | None = None
+    prefix_length: int | None = None
+
 class VlanDesiredStateOperation(BaseModel):
     model_config = {"extra": "forbid"}
     object_type: Literal["vlan"]
     operation: Literal["ensure_present", "ensure_absent"]
     attributes: VlanAttributes = Field(default_factory=VlanAttributes)
+    target_device: str | None = Field(default=None, description="Optional single target device name")
+    target_devices: list[str] | None = Field(default=None, description="Optional target device names")
 
 class InterfaceDesiredStateOperation(BaseModel):
     model_config = {"extra": "forbid"}
     object_type: Literal["interface"]
     operation: Literal["set_access_vlan", "set_trunk"]
     attributes: InterfaceAttributes = Field(default_factory=InterfaceAttributes)
+    target_device: str | None = Field(default=None, description="Optional single target device name")
+    target_devices: list[str] | None = Field(default=None, description="Optional target device names")
 
-DesiredStateOperation = Union[VlanDesiredStateOperation, InterfaceDesiredStateOperation]
+class SviDesiredStateOperation(BaseModel):
+    model_config = {"extra": "forbid"}
+    object_type: Literal["svi"]
+    operation: Literal["ensure_present", "ensure_absent"]
+    attributes: SviAttributes = Field(default_factory=SviAttributes)
+    target_device: str | None = Field(default=None, description="Optional single target device name")
+    target_devices: list[str] | None = Field(default=None, description="Optional target device names")
+
+DesiredStateOperation = Union[
+    VlanDesiredStateOperation,
+    InterfaceDesiredStateOperation,
+    SviDesiredStateOperation,
+]
 
 
 class VlanDesiredState(BaseModel):
@@ -77,6 +99,27 @@ class RequestedChange(BaseModel):
     )
 
 
+class RollbackStep(BaseModel):
+    """A single structured rollback instruction tied to a forward operation."""
+
+    model_config = {"extra": "forbid"}
+    order: int = Field(
+        description="Execution order, 1-indexed. Dependents first (interface → SVI → VLAN)."
+    )
+    object_type: Literal["vlan", "svi", "interface"] = Field(
+        description="Object type this step reverses"
+    )
+    operation: str = Field(
+        description="Reverse operation, e.g. 'remove', 'create', 'reset_access_vlan'"
+    )
+    target_device: str = Field(description="Device name")
+    attributes: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Key attributes for the rollback (vlan_id, interface, ip_address, etc.)",
+    )
+    description: str = Field(description="Human-readable rollback instruction")
+
+
 class RollbackPlan(BaseModel):
     model_config = {"extra": "forbid"}
     summary: str = Field(
@@ -89,6 +132,10 @@ class RollbackPlan(BaseModel):
     rollback_steps: list[str] = Field(
         default_factory=list,
         description="Concrete rollback actions; include at least one step when feasible"
+    )
+    structured_rollback_steps: list[RollbackStep] = Field(
+        default_factory=list,
+        description="Operation-specific rollback steps generated from the forward diff",
     )
 
 
@@ -105,20 +152,116 @@ class PortSpec(BaseModel):
     mode: SwitchportMode = Field(description="'access' or 'trunk'")
 
 
+class VlanChangeOperation(BaseModel):
+    model_config = {"extra": "forbid"}
+    change_type: Literal["vlan"] = "vlan"
+    op: Literal["create", "remove"]
+    vlan_id: int
+    name: str = ""
+    status: Literal["apply", "skip", "blocked"] = "apply"
+    reason: str | None = None
+
+class SviChangeOperation(BaseModel):
+    model_config = {"extra": "forbid"}
+    change_type: Literal["svi"] = "svi"
+    op: Literal["create", "remove"]
+    vlan_id: int
+    ip_address: str | None = None
+    prefix_length: int | None = None
+    interface: str | None = None
+    status: Literal["apply", "skip", "blocked"] = "apply"
+    reason: str | None = None
+
+class InterfaceChangeOperation(BaseModel):
+    model_config = {"extra": "forbid"}
+    change_type: Literal["interface"] = "interface"
+    op: Literal["set_access_vlan", "set_trunk"]
+    interface: str
+    vlan_id: int
+    status: Literal["apply", "skip", "blocked"] = "apply"
+    reason: str | None = None
+
+ChangeOperation = Union[VlanChangeOperation, SviChangeOperation, InterfaceChangeOperation]
+
+
 class VlanChange(BaseModel):
     model_config = {"extra": "forbid"}
-    vlans_to_create: list[VlanSpec] = Field(
+    operations: list[ChangeOperation] = Field(
         default_factory=list,
-        description="VLANs that must be created on the target device",
+        description="Typed operations for the target device",
     )
-    vlans_to_remove: list[VlanSpec] = Field(
-        default_factory=list,
-        description="VLANs that must be removed from the target device",
-    )
-    ports_to_update: list[PortSpec] = Field(
-        default_factory=list,
-        description="Interfaces whose VLAN configuration must be updated",
-    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        
+        if "operations" in data:
+            return data
+            
+        operations = []
+        # Convert legacy fields
+        for v in data.get("vlans_to_create", []):
+            v_id = v.get("id") if isinstance(v, dict) else getattr(v, "id", None)
+            v_name = v.get("name", "") if isinstance(v, dict) else getattr(v, "name", "")
+            operations.append({
+                "change_type": "vlan",
+                "op": "create",
+                "vlan_id": v_id,
+                "name": v_name,
+                "status": "apply",
+            })
+        for v in data.get("vlans_to_remove", []):
+            v_id = v.get("id") if isinstance(v, dict) else getattr(v, "id", None)
+            v_name = v.get("name", "") if isinstance(v, dict) else getattr(v, "name", "")
+            operations.append({
+                "change_type": "vlan",
+                "op": "remove",
+                "vlan_id": v_id,
+                "name": v_name,
+                "status": "apply",
+            })
+        for p in data.get("ports_to_update", []):
+            iface = p.get("interface") if isinstance(p, dict) else getattr(p, "interface", None)
+            v_id = p.get("vlan_id") if isinstance(p, dict) else getattr(p, "vlan_id", None)
+            mode = p.get("mode") if isinstance(p, dict) else getattr(p, "mode", None)
+            mode_value = mode.value if isinstance(mode, SwitchportMode) else mode
+            op = "set_access_vlan" if mode_value == SwitchportMode.ACCESS.value else "set_trunk"
+            operations.append({
+                "change_type": "interface",
+                "op": op,
+                "interface": iface,
+                "vlan_id": v_id,
+                "status": "apply",
+            })
+            
+        return {"operations": operations}
+
+    @property
+    def vlans_to_create(self) -> list[VlanSpec]:
+        return [
+            VlanSpec(id=op.vlan_id, name=op.name)
+            for op in self.operations
+            if isinstance(op, VlanChangeOperation) and op.op == "create" and op.status == "apply"
+        ]
+
+    @property
+    def vlans_to_remove(self) -> list[VlanSpec]:
+        return [
+            VlanSpec(id=op.vlan_id, name=op.name)
+            for op in self.operations
+            if isinstance(op, VlanChangeOperation) and op.op == "remove" and op.status == "apply"
+        ]
+
+    @property
+    def ports_to_update(self) -> list[PortSpec]:
+        ports = []
+        for op in self.operations:
+            if isinstance(op, InterfaceChangeOperation) and op.status == "apply":
+                mode = "access" if op.op == "set_access_vlan" else "trunk"
+                ports.append(PortSpec(interface=op.interface, vlan_id=op.vlan_id, mode=mode))
+        return ports
 
 
 class DeviceChange(BaseModel):
@@ -264,4 +407,3 @@ class ChangeRequest(BaseModel):
         default=None,
         description="Structured no_op/apply/blocked decision carried through from the planner.",
     )
-

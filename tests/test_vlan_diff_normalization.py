@@ -9,6 +9,10 @@ Covers:
 
 from net_agent_harness.models.changes import (
     DeviceChange,
+    InterfaceDesiredStateOperation,
+    InterfaceAttributes,
+    InterfaceChangeOperation,
+    SviChangeOperation,
     VlanChange,
     VlanSpec,
     PortSpec,
@@ -17,6 +21,7 @@ from net_agent_harness.models.enums import NetworkDomain
 from net_agent_harness.tools.evaluation import (
     normalize_vlan_diff,
     _merge_device_changes,
+    _op_matches_device,
 )
 
 
@@ -183,6 +188,94 @@ class TestMergeDeviceChanges:
         vlans = merged[0].changes.vlans_to_create
         assert len(vlans) == 1
         assert vlans[0].name == "users2"
+
+    def test_merge_prefers_apply_over_skip_for_same_operation(self):
+        changes = [
+            DeviceChange(
+                device="sw1",
+                domain=NetworkDomain.VLAN,
+                changes=VlanChange(
+                    operations=[
+                        InterfaceChangeOperation(
+                            op="set_access_vlan",
+                            interface="ge-0/0/13",
+                            vlan_id=12,
+                            status="skip",
+                        )
+                    ]
+                ),
+            ),
+            DeviceChange(
+                device="sw1",
+                domain=NetworkDomain.VLAN,
+                changes=VlanChange(
+                    operations=[
+                        InterfaceChangeOperation(
+                            op="set_access_vlan",
+                            interface="ge-0/0/13",
+                            vlan_id=12,
+                            status="apply",
+                        )
+                    ]
+                ),
+            ),
+        ]
+        merged = _merge_device_changes(changes)
+        ops = merged[0].changes.operations
+        assert len(ops) == 1
+        assert isinstance(ops[0], InterfaceChangeOperation)
+        assert ops[0].status == "apply"
+
+    def test_merge_keeps_distinct_svi_targets(self):
+        changes = [
+            DeviceChange(
+                device="sw1",
+                domain=NetworkDomain.VLAN,
+                changes=VlanChange(
+                    operations=[
+                        SviChangeOperation(
+                            op="create",
+                            vlan_id=11,
+                            ip_address="10.11.0.1",
+                            prefix_length=24,
+                            interface="irb.11",
+                            status="apply",
+                        )
+                    ]
+                ),
+            ),
+            DeviceChange(
+                device="sw1",
+                domain=NetworkDomain.VLAN,
+                changes=VlanChange(
+                    operations=[
+                        SviChangeOperation(
+                            op="create",
+                            vlan_id=11,
+                            ip_address="10.11.0.2",
+                            prefix_length=24,
+                            interface="irb.11",
+                            status="apply",
+                        )
+                    ]
+                ),
+            ),
+        ]
+        merged = _merge_device_changes(changes)
+        svi_ops = [op for op in merged[0].changes.operations if isinstance(op, SviChangeOperation)]
+        assert len(svi_ops) == 2
+
+
+class TestDeviceOpMatch:
+    def test_matches_pydantic_operation_targeting(self):
+        op = InterfaceDesiredStateOperation(
+            object_type="interface",
+            operation="set_access_vlan",
+            attributes=InterfaceAttributes(name="ge-0/0/1", access_vlan=12),
+            target_devices=["sw1"],
+        )
+        assert _op_matches_device(op, "sw1")
+        assert not _op_matches_device(op, "sw2")
 
 
 # ── End-to-end evaluation integration ───────────────────────────────────────
