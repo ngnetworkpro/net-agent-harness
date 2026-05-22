@@ -132,9 +132,8 @@ def ensure_renderable(change_request: ChangeRequest) -> None:
         and change_request.plan_decision.decision.value == "no_op"
     ):
         reason = change_request.plan_decision.reason
-        raise typer.Exit(
-            message=f"[no_op] Nothing to render: {reason}"
-        )
+        typer.echo(f"[no_op] Nothing to render: {reason}")
+        raise typer.Exit()
 
     if (
         change_request.plan_decision is not None
@@ -223,7 +222,10 @@ def ask(request: str, operator: str = "local-user"):
         raise typer.BadParameter(
             f"Request routed to {route_label}. Use the plan workflow for change requests."
         )
-    assert route.capability is not None
+    if route.capability is None:
+        # Invariant: DispatchMode.DIRECT_ANSWER implies a ROUTED status,
+        # which Pydantic validation ensures has a non-None capability.
+        raise ValueError("Routed request is missing capability.")
     _run_direct_answer(request, route.capability, operator)
 
 

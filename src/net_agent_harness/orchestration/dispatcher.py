@@ -56,8 +56,10 @@ def dispatch_request(request: RoutedRequest) -> DispatchDecision:
             reason="Routing did not produce a safe execution path.",
         )
 
-    assert request.kind is not None
-    assert request.capability is not None
+    if request.kind is None or request.capability is None:
+        # Invariant: request.status check above plus model-validator
+        # ensures these are not None when status is ROUTED.
+        raise ValueError("Routed request is missing kind or capability.")
 
     handler = HANDLER_REGISTRY[request.capability]
     mode = DISPATCH_MODE_BY_ROUTE[(request.kind, request.capability)]

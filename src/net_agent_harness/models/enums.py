@@ -75,7 +75,7 @@ class RoutingStatus(str, Enum):
     BLOCKED = "blocked"
 
 class ValidationStatus(str, Enum):
-    PASS = "pass"
+    PASS = "pass"  # nosec B105
     WARN = "warn"
     FAIL = "fail"
 
