@@ -2,7 +2,7 @@ import os
 import re
 import json
 import shutil
-import subprocess
+import subprocess  # nosec B404
 import tempfile
 from pathlib import Path
 
@@ -440,7 +440,7 @@ def _validate_backend_dry_run(
             target_path = workdir / f"{index:03d}_{safe_device}.tf"
             target_path.write_text((snippet.rendered_text or "").strip() + "\n")
 
-        init_result = subprocess.run(
+        init_result = subprocess.run(  # nosec B603
             [terraform_bin, "init", "-backend=false", "-input=false", "-no-color"],
             cwd=workdir,
             capture_output=True,
@@ -473,7 +473,7 @@ def _validate_backend_dry_run(
                 ),
             ]
 
-        validate_result = subprocess.run(
+        validate_result = subprocess.run(  # nosec B603
             [terraform_bin, "validate", "-no-color"],
             cwd=workdir,
             capture_output=True,
@@ -493,7 +493,7 @@ def _validate_backend_dry_run(
         plan_status = ValidationStatus.FAIL
         plan_details = "Terraform plan was skipped because validate failed."
         if validate_ok:
-            plan_result = subprocess.run(
+            plan_result = subprocess.run(  # nosec B603
                 [
                     terraform_bin,
                     "plan",

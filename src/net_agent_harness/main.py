@@ -223,7 +223,8 @@ def ask(request: str, operator: str = "local-user"):
         raise typer.BadParameter(
             f"Request routed to {route_label}. Use the plan workflow for change requests."
         )
-    assert route.capability is not None
+    if route.capability is None:
+        raise typer.BadParameter("Request capability is missing.")
     _run_direct_answer(request, route.capability, operator)
 
 
