@@ -265,9 +265,8 @@ class TestUnsupportedVendors:
             port_changes=[],
             platform="mist",
         )
-        # mist → JUNIPER strategy: expect JunOS-style "vlan <id>" command
-        assert "vlan 220" in snippet.commands
-        assert "name Engineering" in snippet.commands
+        # mist → JUNIPER strategy: expect JunOS-style "set vlans <name> vlan-id <id>" command
+        assert "set vlans Engineering vlan-id 220" in snippet.commands
 
     def test_other_vendor_infers_from_ios_platform(self):
         snippet = build_cli_fallback_snippet(
