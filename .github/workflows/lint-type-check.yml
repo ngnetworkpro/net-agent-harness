@@ -3,7 +3,7 @@ name: lint-type-check
 on:
   pull_request:
     branches:
-      - main
+      - master
   workflow_dispatch:
 
 permissions:
