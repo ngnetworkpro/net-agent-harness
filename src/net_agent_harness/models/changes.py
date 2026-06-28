@@ -259,7 +259,7 @@ class VlanChange(BaseModel):
         ports = []
         for op in self.operations:
             if isinstance(op, InterfaceChangeOperation) and op.status == "apply":
-                mode = "access" if op.op == "set_access_vlan" else "trunk"
+                mode = SwitchportMode.ACCESS if op.op == "set_access_vlan" else SwitchportMode.TRUNK
                 ports.append(PortSpec(interface=op.interface, vlan_id=op.vlan_id, mode=mode))
         return ports
 

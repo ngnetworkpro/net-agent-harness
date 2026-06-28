@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     # config.py additions
     provider: str | None = None           # e.g. "nvidia", "ollama", "openai"
     openai_model: str = "gpt-4o-mini"     # used only if provider="openai"
+    openai_api_key: str | None = None
     ollama_model: str = 'qwen3.5:9b'
     nvidia_api_key: str | None = None
     nvidia_model: str = 'minimaxai/minimax-m2.7' # optional 'mistralai/mistral-nemotron'

@@ -132,9 +132,8 @@ def ensure_renderable(change_request: ChangeRequest) -> None:
         and change_request.plan_decision.decision.value == "no_op"
     ):
         reason = change_request.plan_decision.reason
-        raise typer.Exit(
-            message=f"[no_op] Nothing to render: {reason}"
-        )
+        print(f"[no_op] Nothing to render: {reason}")
+        raise typer.Exit()
 
     if (
         change_request.plan_decision is not None

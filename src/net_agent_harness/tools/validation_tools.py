@@ -587,8 +587,8 @@ def validate_config_render_acceptance(
     if config_render.meta.run_id != change_request.meta.run_id:
         errors.append(f"run_id mismatch: '{config_render.meta.run_id}' vs '{change_request.meta.run_id}'.")
 
-    device_primaries = {}
-    device_fallbacks = {}
+    device_primaries: dict[str, int] = {}
+    device_fallbacks: dict[str, int] = {}
     from ..config import settings
     selected_backend = settings.execution_backend
     

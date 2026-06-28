@@ -151,17 +151,17 @@ class VlanRenderPayload(BaseModel):
 
         if self.interface_ops:
             payload_parts.append("Interface Operations:")
-            for op in self.interface_ops:
-                mode = op.switchport_mode.value if op.switchport_mode else "unknown"
-                access_part = f", access_vlan={op.access_vlan}" if op.access_vlan is not None else ""
+            for iface_op in self.interface_ops:
+                mode = iface_op.switchport_mode.value if iface_op.switchport_mode else "unknown"
+                access_part = f", access_vlan={iface_op.access_vlan}" if iface_op.access_vlan is not None else ""
                 payload_parts.append(
                     "  - "
-                    + str(op.interface_name)
+                    + str(iface_op.interface_name)
                     + ": mode="
                     + mode
                     + access_part
                     + ", target="
-                    + str(op.target.name)
+                    + str(iface_op.target.name)
                 )
 
         return payload_parts

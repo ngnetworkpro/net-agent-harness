@@ -147,6 +147,10 @@ class TerraformBackendAdapter(BackendAdapter):
         )
 
     async def _create_github_pr(self, updated_content: str, branch_name: str) -> str:
+        if not settings.github_token:
+            raise RuntimeError("GitHub token is not configured in settings")
+        if not settings.github_repo:
+            raise RuntimeError("GitHub repository is not configured in settings")
         token = settings.github_token.get_secret_value()
         repo = settings.github_repo
         headers = {
@@ -195,7 +199,7 @@ class TerraformBackendAdapter(BackendAdapter):
             })
             if pr_resp.status_code == 422:
                 # PR likely already exists, try to find it
-                pulls_resp = await client.get(f"/repos/{repo}/pulls", params={"head": f"{settings.github_repo.split('/')[0]}:{branch_name}"})
+                pulls_resp = await client.get(f"/repos/{repo}/pulls", params={"head": f"{repo.split('/')[0]}:{branch_name}"})
                 if pulls_resp.status_code == 200 and pulls_resp.json():
                     return pulls_resp.json()[0]["html_url"]
                 raise RuntimeError(f"GitHub API error creating PR: HTTP {pr_resp.status_code} (validation failed or PR exists but not found)")
