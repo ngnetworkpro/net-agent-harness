@@ -53,7 +53,7 @@ jobs:
 
   semgrep:
     name: Semgrep PR Scan
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       actions: read
