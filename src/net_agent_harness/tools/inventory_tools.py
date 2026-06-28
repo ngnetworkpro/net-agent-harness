@@ -98,8 +98,11 @@ def _normalize_resolved_target(item: dict) -> ResolvedTarget:
             pass
     if vendor is None:
         vendor = _infer_vendor_from_platform(item.get("platform"))
+    name = item.get("name")
+    if not isinstance(name, str):
+        name = ""
     return ResolvedTarget(
-        name=item.get("name"),
+        name=name,
         site=item.get("site"),
         role=item.get("role"),
         platform=item.get("platform"),

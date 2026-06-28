@@ -16,7 +16,8 @@ _SITE_VLANS = [
 
 
 def get_mock_inventory_snapshot(site: str | None = None, device_name: str | None = None):
-    snapshot = get_inventory_for_site(run_id="mock-run", site=site)
+    site_str = site or "HQ"
+    snapshot = get_inventory_for_site(run_id="mock-run", site=site_str)
     
     results = []
     for device in snapshot.devices:

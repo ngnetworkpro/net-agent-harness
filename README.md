@@ -160,6 +160,8 @@ Key settings:
 | `NET_AGENT_OLLAMA_MODEL` | Model name when using Ollama | `qwen3.5:9b` |
 | `NET_AGENT_NVIDIA_API_KEY` | API key for NVIDIA provider | — |
 | `NET_AGENT_NVIDIA_MODEL` | Model name when using NVIDIA | `minimaxai/minimax-m2.7` |
+| `NET_AGENT_OPENAI_API_KEY` | API key for OpenAI provider | — |
+| `NET_AGENT_OPENAI_MODEL` | Model name when using OpenAI | `gpt-4o-mini` |
 | `NET_AGENT_INVENTORY_SOURCE` | `mock` or `netbox` | `mock` |
 
 ### 5. Start your model provider

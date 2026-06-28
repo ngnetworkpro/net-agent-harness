@@ -4,9 +4,16 @@ These functions operate directly on Pydantic model objects and have no side-effe
 making them trivially testable and safe to call from any layer.
 """
 
+from typing import Literal
 from ..models.inventory import DeviceInfo, InterfaceInfo
 from ..models.enums import SwitchportMode, AllowedVlansMode, NetworkDomain
-from ..models.changes import DeviceChange, VlanChange, VlanSpec, PortSpec
+from ..models.changes import (
+    DeviceChange,
+    VlanChange,
+    ChangeOperation,
+    VlanChangeOperation,
+    InterfaceChangeOperation,
+)
 
 
 def compute_vlan_diff(intent: dict, current_state: DeviceInfo) -> list[DeviceChange]:
@@ -54,23 +61,27 @@ def compute_vlan_diff(intent: dict, current_state: DeviceInfo) -> list[DeviceCha
     vlan_name: str = intent.get("vlan_name", "")
     interfaces: list[dict] = intent.get("interfaces", [])
 
-    vlans_to_create: list[VlanSpec] = []
-    ports_to_update: list[PortSpec] = []
+    operations: list[ChangeOperation] = []
     unknown_interfaces: list[str] = []
 
     if not vlan_exists(current_state, vlan_id):
-        vlans_to_create.append(VlanSpec(id=vlan_id, name=vlan_name))
+        operations.append(
+            VlanChangeOperation(
+                change_type="vlan",
+                op="create",
+                vlan_id=vlan_id,
+                name=vlan_name,
+                status="apply",
+            )
+        )
 
     iface_map: dict[str, InterfaceInfo] = {
         iface.name: iface for iface in current_state.interfaces
     }
 
     for iface in interfaces:
-        if "interface_id" in iface.keys():
-            iface_name = iface.get("interface_id")
-        elif "name" in iface.keys():
-            iface_name = iface.get("name")
-        else:
+        iface_name = iface.get("interface_id") or iface.get("name")
+        if not isinstance(iface_name, str):
             continue
 
         iface_obj = iface_map.get(iface_name)
@@ -78,27 +89,48 @@ def compute_vlan_diff(intent: dict, current_state: DeviceInfo) -> list[DeviceCha
             unknown_interfaces.append(iface_name)
             continue
 
-        mode = iface.get("switchport_mode", "trunk").lower()
-        iface_vlan_id = iface.get("access_vlan") or vlan_id
+        mode_str = iface.get("switchport_mode", "trunk")
+        if not isinstance(mode_str, str):
+            mode_str = "trunk"
+        mode_str = mode_str.lower()
 
-        if mode == "trunk":
+        if mode_str == "access":
+            mode = SwitchportMode.ACCESS
+        else:
+            mode = SwitchportMode.TRUNK
+
+        iface_vlan_val = iface.get("access_vlan")
+        iface_vlan_id = iface_vlan_val if isinstance(iface_vlan_val, int) else vlan_id
+
+        needs_update = False
+        if mode == SwitchportMode.TRUNK:
             if iface_obj.mode != SwitchportMode.TRUNK:
-                ports_to_update.append(PortSpec(interface=iface_name, vlan_id=iface_vlan_id, mode=mode))
+                needs_update = True
             elif not trunk_allows_vlan(iface_obj, iface_vlan_id):
-                ports_to_update.append(PortSpec(interface=iface_name, vlan_id=iface_vlan_id, mode=mode))
-
-        elif mode == "access":
+                needs_update = True
+        elif mode == SwitchportMode.ACCESS:
             if iface_obj.mode != SwitchportMode.ACCESS:
-                ports_to_update.append(PortSpec(interface=iface_name, vlan_id=iface_vlan_id, mode=mode))
+                needs_update = True
             elif not access_vlan_matches(iface_obj, iface_vlan_id):
-                ports_to_update.append(PortSpec(interface=iface_name, vlan_id=iface_vlan_id, mode=mode))
+                needs_update = True
+
+        if needs_update:
+            op: Literal["set_access_vlan", "set_trunk"] = "set_access_vlan" if mode == SwitchportMode.ACCESS else "set_trunk"
+            operations.append(
+                InterfaceChangeOperation(
+                    change_type="interface",
+                    op=op,
+                    interface=iface_name,
+                    vlan_id=iface_vlan_id,
+                    status="apply",
+                )
+            )
 
     device_change = DeviceChange(
         device=current_state.name,
         domain=NetworkDomain.VLAN,
         changes=VlanChange(
-            vlans_to_create=vlans_to_create,
-            ports_to_update=ports_to_update,
+            operations=operations,
         ),
     )
 

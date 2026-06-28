@@ -1,7 +1,8 @@
 from ..models.ipam import IpamAddressAssignment, IpamPrefix
+from .ipam_adapter import GuardedIPAMWriteAdapter
 
 
-class MockIPAMAdapter:
+class MockIPAMAdapter(GuardedIPAMWriteAdapter):
     """Read-only seeded IPAM data for local development."""
 
     def __init__(self) -> None:

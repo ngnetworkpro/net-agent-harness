@@ -1,7 +1,7 @@
 # agents/agent_factory.py
 from __future__ import annotations
 import os
-from typing import Any
+from typing import Any, Callable, TypeVar
 from pydantic_ai import Agent
 from pydantic_ai.models.ollama import OllamaModel
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -42,7 +42,7 @@ def _openai_adapter() -> OpenAIChatModel:
     return OpenAIChatModel(settings.openai_model)  # add openai_model to Settings
 
 
-_ADAPTERS: dict[str, callable] = {
+_ADAPTERS: dict[str, Callable[[], Any]] = {
     "nvidia": _nvidia_adapter,
     "ollama": _ollama_adapter,
     "openai": _openai_adapter,
@@ -76,14 +76,17 @@ def resolve_model(provider: str | None = None):
 
 # ── Agent Factory ────────────────────────────────────────────────────────────
 
+DepsT = TypeVar("DepsT")
+
+
 def build_agent(
     *,
-    deps_type: type,
+    deps_type: type[DepsT],
     output_type: Any,
     provider: str | None = None,
     retries: int = 2,
     **agent_kwargs,
-) -> Agent:
+) -> Agent[DepsT, Any]:
     """
     Create a pydantic_ai Agent wired to the resolved model.
 

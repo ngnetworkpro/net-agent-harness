@@ -151,14 +151,14 @@ async def _enforce_plan_decision(
 
 
 @change_planner.tool
-async def get_inventory(ctx: RunContext[RunContextData], site: str):
+async def get_inventory(ctx: RunContext[RunContextData], /, site: str):
     return lookup_inventory(ctx, site=site)
 
 @change_planner.tool
-async def get_site_targets(ctx: RunContext[RunContextData], site: str):
+async def get_site_targets(ctx: RunContext[RunContextData], /, site: str):
     return resolve_site_targets(ctx, site=site)
 
 
 @change_planner.tool
-async def get_device_target(ctx: RunContext[RunContextData], site: str | None, device_name: str):
+async def get_device_target(ctx: RunContext[RunContextData], /, site: str | None, device_name: str):
     return resolve_device_target(ctx, site=site, device_name=device_name)

@@ -1,6 +1,7 @@
 from pathlib import Path
 from datetime import datetime, timezone
-from ..models.artifacts import ConfigRender, ExecutionPlan, ValidationReport, ExecutionResult
+from typing import Any, Literal
+from ..models.artifacts import ConfigRender, ExecutionPlan, ValidationReport, ExecutionResult, ConfigRenderOutput
 from ..models.changes import ChangeRequest
 from ..models.enums import PlanDecisionType, RenderBackendType
 from ..models.common import ArtifactMeta
@@ -55,7 +56,7 @@ class StageCoordinator:
                 "Render the configuration.",
                 deps=render_input,
             )
-            render_result = render_result_data.output
+            render_result: ConfigRenderOutput = render_result_data.output
 
             from .resolve_backend import aggregate_and_label_snippets
             final_snippets = aggregate_and_label_snippets(render_result.snippets, primary_backend)
@@ -142,7 +143,7 @@ class StageCoordinator:
         change_request: ChangeRequest,
         validation_report: ValidationReport,
     ) -> tuple[ExecutionPlan, Path]:
-        status = "ready" if validation_report.approved_for_execution else "blocked"
+        status: Literal["ready", "blocked"] = "ready" if validation_report.approved_for_execution else "blocked"
         detail = (
             "Validation approved execution."
             if validation_report.approved_for_execution
@@ -180,7 +181,7 @@ class StageCoordinator:
         render_result, render_path = await self.render(change_request)
         validation_result, validation_path = self.validate(render_result, change_request)
         execution_plan, execution_plan_path = self.create_execution_plan(change_request, validation_result)
-        summary = {
+        summary: dict[str, Any] = {
             'run_id': change_request.meta.run_id,
             'artifacts': {
                 'change_request': str(self.artifact_store.artifact_path(change_request.meta.run_id, 'change_request')),
