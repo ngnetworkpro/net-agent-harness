@@ -6,10 +6,10 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "pydantic>=2.13.4",
-  "pydantic-settings>=2.14.2",
-  "pydantic-ai>=2.3.0",
+  "pydantic-settings>=2.15.0",
+  "pydantic-ai>=2.27.0",
   "ollama>=0.6.2",
-  "typer>=0.26.8",
+  "typer>=0.27.1",
   "rich>=15.0.0",
   "httpx>=0.28.1",
 ]
@@ -19,8 +19,8 @@ dev = [
   "pytest>=9.1.1",
   "pytest-asyncio>=1.4.0",
   "pytest-cov>=7.1.0",
-  "ruff>=0.15.20",
-  "mypy>=2.1.0",
+  "ruff>=0.16.2",
+  "mypy>=2.3.0",
   "types-pyyaml",
 ]
 
@@ -28,7 +28,7 @@ dev = [
 net-agent = "net_agent_harness.main:app"
 
 [build-system]
-requires = ["setuptools>=82.0.1", "wheel"]
+requires = ["setuptools>=84.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
@@ -48,5 +48,5 @@ pythonpath = ["src"]
 
 [dependency-groups]
 dev = [
-    "types-pyyaml>=6.0.12.20260518",
+    "types-pyyaml>=6.0.12.20260724",
 ]
