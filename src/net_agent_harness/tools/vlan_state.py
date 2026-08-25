@@ -5,15 +5,16 @@ making them trivially testable and safe to call from any layer.
 """
 
 from typing import Literal
-from ..models.inventory import DeviceInfo, InterfaceInfo
-from ..models.enums import SwitchportMode, AllowedVlansMode, NetworkDomain
+
 from ..models.changes import (
-    DeviceChange,
-    VlanChange,
     ChangeOperation,
-    VlanChangeOperation,
+    DeviceChange,
     InterfaceChangeOperation,
+    VlanChange,
+    VlanChangeOperation,
 )
+from ..models.enums import AllowedVlansMode, NetworkDomain, SwitchportMode
+from ..models.inventory import DeviceInfo, InterfaceInfo
 
 
 def compute_vlan_diff(intent: dict, current_state: DeviceInfo) -> list[DeviceChange]:
@@ -94,25 +95,20 @@ def compute_vlan_diff(intent: dict, current_state: DeviceInfo) -> list[DeviceCha
             mode_str = "trunk"
         mode_str = mode_str.lower()
 
-        if mode_str == "access":
-            mode = SwitchportMode.ACCESS
-        else:
-            mode = SwitchportMode.TRUNK
+        mode = SwitchportMode.ACCESS if mode_str == "access" else SwitchportMode.TRUNK
 
         iface_vlan_val = iface.get("access_vlan")
         iface_vlan_id = iface_vlan_val if isinstance(iface_vlan_val, int) else vlan_id
 
         needs_update = False
-        if mode == SwitchportMode.TRUNK:
-            if iface_obj.mode != SwitchportMode.TRUNK:
-                needs_update = True
-            elif not trunk_allows_vlan(iface_obj, iface_vlan_id):
-                needs_update = True
-        elif mode == SwitchportMode.ACCESS:
-            if iface_obj.mode != SwitchportMode.ACCESS:
-                needs_update = True
-            elif not access_vlan_matches(iface_obj, iface_vlan_id):
-                needs_update = True
+        if (
+            mode == SwitchportMode.TRUNK
+            and (iface_obj.mode != SwitchportMode.TRUNK or not trunk_allows_vlan(iface_obj, iface_vlan_id))
+        ) or (
+            mode == SwitchportMode.ACCESS
+            and (iface_obj.mode != SwitchportMode.ACCESS or not access_vlan_matches(iface_obj, iface_vlan_id))
+        ):
+            needs_update = True
 
         if needs_update:
             op: Literal["set_access_vlan", "set_trunk"] = "set_access_vlan" if mode == SwitchportMode.ACCESS else "set_trunk"

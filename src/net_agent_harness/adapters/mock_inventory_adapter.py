@@ -1,6 +1,6 @@
 from ..models.common import ArtifactMeta
-from ..models.inventory import DeviceInfo, InterfaceInfo, VlanInfo, InventorySnapshot
-from ..models.enums import DeviceVendor, SwitchportMode, InterfaceType, SpanningTreeMode
+from ..models.enums import DeviceVendor, InterfaceType, SpanningTreeMode, SwitchportMode
+from ..models.inventory import DeviceInfo, InterfaceInfo, InventorySnapshot, VlanInfo
 
 # ---------------------------------------------------------------------------
 # Shared site VLAN table

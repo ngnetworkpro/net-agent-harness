@@ -1,7 +1,10 @@
 # agents/agent_factory.py
 from __future__ import annotations
+
 import os
-from typing import Any, Callable, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
+
 from pydantic_ai import Agent
 from pydantic_ai.models.ollama import OllamaModel
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -9,7 +12,6 @@ from pydantic_ai.providers.ollama import OllamaProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from ..config import settings
-
 
 # ── Provider Adapters ────────────────────────────────────────────────────────
 # Each adapter returns a configured model instance.

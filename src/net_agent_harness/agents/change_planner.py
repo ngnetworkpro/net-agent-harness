@@ -1,11 +1,10 @@
 from pydantic_ai import RunContext
 from pydantic_ai.output import NativeOutput
 
+from ..agents.agent_factory import build_agent
 from ..models.changes import PlannedChange
 from ..orchestration.run_context import RunContextData
 from ..tools.inventory_tools import lookup_inventory, resolve_device_target, resolve_site_targets
-
-from ..agents.agent_factory import build_agent
 
 change_planner = build_agent(
     deps_type=RunContextData,
@@ -36,19 +35,21 @@ def planner_system_prompt(ctx: RunContext[RunContextData]) -> str:
         "- desired configuration intent ",
         "- current-state questions ",
         "- unsupported or ambiguous requests ",
-        "- when wording is ambiguous or conflicts with inventory configuration, return question/blocked instead of assuming "
+        "- when wording is ambiguous or conflicts with inventory configuration, return question/blocked instead of assuming ",
         "4. Prefer vendor-neutral intent, not vendor-specific syntax. ",
         "5. Do not render CLI commands or API payloads. ",
         "6. Do not decide execution details unless explicitly provided by context. ",
         "7. If the request is ambiguous, return blocked with a clear reason. ",
         "8. If the request asks for something that may already be true, describe the desired end state so a later diff stage can determine no-op vs apply. ",
         "Target Resolution: ",
-        "During planning, call get_device_target if the request names a specific device, "
-        "or get_site_targets if the request references a site without a specific device. "
-        "Use the inventory results to inform risk, assumptions, and dependency fields. "
-        "Note: resolved_targets in your output will be validated and overwritten by the "
-        "orchestration layer. Focus on populating scope, requested_change, risk, and "
-        "plan_decision accurately. ",
+        (
+            "During planning, call get_device_target if the request names a specific device, "
+            "or get_site_targets if the request references a site without a specific device. "
+            "Use the inventory results to inform risk, assumptions, and dependency fields. "
+            "Note: resolved_targets in your output will be validated and overwritten by the "
+            "orchestration layer. Focus on populating scope, requested_change, risk, and "
+            "plan_decision accurately. "
+        ),
         "Authoritative domain context: ",
         "{{ domain_context }}",
         "Core terms: ",
@@ -86,7 +87,7 @@ def planner_system_prompt(ctx: RunContext[RunContextData]) -> str:
         "safety_notes: ",
         "- list of risks or review points ",
         "reasoning: ",
-        "- short explanation of how the request was interpreted from the glossary and examples "
+        "- short explanation of how the request was interpreted from the glossary and examples ",
         "Normalization rules: ",
         "- Use vendor-neutral terms such as access_vlan, native_vlan, allowed_vlans_mode, vlan_ids, svi, ip_prefix, acl_entries. ",
         "- If the request says \"put port in VLAN X\" and does not mention trunk, uplink, tagged, or allowed VLANs, interpret it as setting an access VLAN. ",

@@ -1,44 +1,44 @@
+import asyncio
 import json
 import re
 import traceback
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
+
 import typer
-import asyncio
-from rich import print
 from pydantic_ai.exceptions import ModelHTTPError
+from rich import print
+
 from .agents.change_planner import change_planner
-from .orchestration.stream_utils import run_agent_with_spinner
 from .config import settings
 from .models.artifacts import ConfigRender
 from .models.changes import ChangeRequest, PlannedChange, ResolvedTarget
 from .models.common import ArtifactMeta
+from .models.enums import Capability, PlanDecisionType, RunStage
 from .models.resources import (
     DeviceResourceRef,
-    ResourceRelationship,
     ResourceRef,
+    ResourceRelationship,
     SiteResourceRef,
     SiteToDeviceRelationship,
 )
-from datetime import timezone, datetime
-from .models.enums import RunStage
 from .orchestration.coordinator import StageCoordinator
-from .orchestration.run_context import RunContextData
-from .services.artifact_store import ArtifactStore
-from .services.run_store import RunStore
-from .services.run_progress_reporter import RunProgressReporter
-from .tools.inventory_tools import resolve_from_scope
-from .tools.evaluation import evaluate_intent_state
-from .tools.validation_tools import validate_config_render 
-
 from .orchestration.desired_state_normalizer import normalize_desired_state
 from .orchestration.dispatcher import DispatchMode, dispatch_request
+from .orchestration.domain_loader import DomainLoadError, load_domain_context
 from .orchestration.intent_router import route_intent
 from .orchestration.read_only_answer import build_read_only_answer
-from .orchestration.domain_loader import load_domain_context, DomainLoadError
 from .orchestration.rollback_builder import build_rollback_plan
+from .orchestration.run_context import RunContextData
 from .orchestration.scope_validator import ScopeValidationError, validate_target_scope
-from .models.enums import Capability, PlanDecisionType
+from .orchestration.stream_utils import run_agent_with_spinner
+from .services.artifact_store import ArtifactStore
+from .services.run_progress_reporter import RunProgressReporter
+from .services.run_store import RunStore
+from .tools.evaluation import evaluate_intent_state
+from .tools.inventory_tools import resolve_from_scope
+from .tools.validation_tools import validate_config_render
 
 app = typer.Typer(help='Network agent harness prototype')
 run_app = typer.Typer(help='Run end-to-end stage pipelines')
@@ -203,7 +203,7 @@ def plan(request: str, operator: str = 'local-user'):
     except ModelHTTPError as e:
         typer.secho(f"API Connection Error: Failed to communicate with the model provider ({e.status_code}).\nDetails: {e.body}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - CLI top-level command catch-all
         traceback.print_exc()
         typer.secho(f"Error executing plan: {e}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
@@ -378,7 +378,7 @@ async def _async_plan(request: str, operator: str = "local-user"):
             run_id=run_id,
             artifact_id=f"change-request-{run_id}",
             version=1,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             created_by=operator,
         ),
         domain=route.domain,
@@ -464,7 +464,7 @@ def render(change_request_file: Path):
     except ModelHTTPError as e:
         typer.secho(f"API Connection Error: Failed to communicate with the model provider ({e.status_code}).\nDetails: {e.body}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - CLI top-level command catch-all
         traceback.print_exc()
         typer.secho(f"Error executing render: {e}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
@@ -490,7 +490,7 @@ def run_stages(artifact_path: Path):
     except ModelHTTPError as e:
         typer.secho(f"API Connection Error: Failed to communicate with the model provider ({e.status_code}).\nDetails: {e.body}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - CLI top-level command catch-all
         traceback.print_exc()
         typer.secho(f"Error executing stage pipeline: {e}", fg=typer.colors.RED)
         raise typer.Exit(code=1)

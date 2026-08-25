@@ -1,6 +1,6 @@
-import json
 import base64
-from datetime import datetime, timezone
+import json
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from textwrap import indent
 from typing import Any
@@ -11,7 +11,12 @@ import httpx
 from net_agent_harness.adapters.backends.base import BackendAdapter
 from net_agent_harness.adapters.backends.cli_snippets import build_cli_fallback_snippet
 from net_agent_harness.config import settings
-from net_agent_harness.models.artifacts import ArtifactMeta, ConfigRender, ConfigSnippet, ExecutionResult
+from net_agent_harness.models.artifacts import (
+    ArtifactMeta,
+    ConfigRender,
+    ConfigSnippet,
+    ExecutionResult,
+)
 from net_agent_harness.models.changes import ChangeRequest
 from net_agent_harness.models.enums import DeviceVendor, RenderBackendType, RenderRole
 
@@ -137,7 +142,7 @@ class TerraformBackendAdapter(BackendAdapter):
                 run_id=run_id,
                 artifact_id=str(uuid4()),
                 version=1,
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
                 created_by="terraform-backend",
             ),
             backend="terraform",
@@ -345,7 +350,7 @@ class TerraformBackendAdapter(BackendAdapter):
                 f"Malformed command entry for device '{device_name}': {cmd!r}"
             ) from exc
         if not isinstance(entry, dict):
-            raise ValueError(
+            raise TypeError(
                 f"Invalid command entry for device '{device_name}': expected object JSON, got {type(entry).__name__}."
             )
         if set(entry.keys()) != {"name", "vlan_id"}:

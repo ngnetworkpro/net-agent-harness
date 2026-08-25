@@ -1,8 +1,8 @@
 from pydantic_ai import Agent
+
 from ..config import settings
 from ..models.artifacts import ValidationReport
 from ..orchestration.run_context import RunContextData
-
 
 validation_agent = Agent(
     model=f"ollama:{settings.ollama_model}",

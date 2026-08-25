@@ -1,5 +1,6 @@
 """Tests for graph state models and workflow runners (Issue #46)."""
 import pytest
+from pydantic import ValidationError
 
 from net_agent_harness.models.enums import Capability, PlanDecisionType, RunStage
 from net_agent_harness.orchestration.graph_runner import (
@@ -35,7 +36,7 @@ class TestGraphStateModels:
         assert state.errors == []
 
     def test_graph_state_rejects_extra_fields(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             WorkflowGraphState(
                 run_id="r",
                 capability=Capability.CHANGE,

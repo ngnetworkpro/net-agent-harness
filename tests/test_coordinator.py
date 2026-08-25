@@ -1,3 +1,8 @@
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from net_agent_harness.models.artifacts import ConfigRender, ConfigRenderOutput, ConfigSnippet
 from net_agent_harness.models.changes import (
     ChangeRequest,
     PlanDecision,
@@ -6,17 +11,19 @@ from net_agent_harness.models.changes import (
     RollbackPlan,
 )
 from net_agent_harness.models.common import ArtifactMeta, ScopeRef
-from net_agent_harness.models.enums import ChangeRisk, NetworkDomain, PlanDecisionType, RunStage
+from net_agent_harness.models.enums import (
+    ChangeRisk,
+    DeviceVendor,
+    NetworkDomain,
+    PlanDecisionType,
+    RenderBackendType,
+    RenderRole,
+    RunStage,
+)
 from net_agent_harness.orchestration.coordinator import StageCoordinator
 from net_agent_harness.services.artifact_store import ArtifactStore
 from net_agent_harness.services.run_store import RunStore
 
-
-from unittest.mock import patch, AsyncMock
-from net_agent_harness.models.artifacts import ConfigRender, ConfigRenderOutput, ConfigSnippet
-from net_agent_harness.models.enums import DeviceVendor, RenderBackendType, RenderRole
-
-import pytest
 
 @pytest.mark.asyncio
 @patch("net_agent_harness.orchestration.coordinator.change_render_agent.run", new_callable=AsyncMock)
@@ -80,7 +87,7 @@ async def test_stage_coordinator_pipeline_api_backend(mock_run, tmp_path, monkey
     assert config_render.meta.parent_artifact_id == "change-1"
     assert config_render.meta.created_by == "stage_coordinator"
 
-    from net_agent_harness.models.artifacts import ValidationReport, ExecutionPlan
+    from net_agent_harness.models.artifacts import ExecutionPlan, ValidationReport
     validation_report = ValidationReport.model_validate_json(
         store.artifact_path("run-1", "validation_report").read_text(encoding="utf-8")
     )
@@ -97,7 +104,11 @@ async def test_stage_coordinator_terraform_skips_llm(tmp_path, monkeypatch):
     """When backend is terraform, the LLM render agent must NOT be called."""
     from net_agent_harness.config import settings
     from net_agent_harness.models.changes import (
-        DeviceChange, VlanChange, VlanSpec, PortSpec, ResolvedTarget,
+        DeviceChange,
+        PortSpec,
+        ResolvedTarget,
+        VlanChange,
+        VlanSpec,
     )
     from net_agent_harness.models.enums import DeviceVendor
 
@@ -144,7 +155,7 @@ async def test_stage_coordinator_terraform_skips_llm(tmp_path, monkeypatch):
         ),
     )
 
-    render_result, render_path = await coordinator.render(change_request)
+    render_result, _render_path = await coordinator.render(change_request)
 
     # Must produce real Terraform HCL, not LLM output
     primary_snippets = [
@@ -241,7 +252,10 @@ async def test_stage_coordinator_validates_platform_constraints_per_device(tmp_p
     """Platform constraints are validated per device, not just from the first target."""
     from net_agent_harness.config import settings
     from net_agent_harness.models.changes import (
-        DeviceChange, VlanChange, VlanSpec, ResolvedTarget,
+        DeviceChange,
+        ResolvedTarget,
+        VlanChange,
+        VlanSpec,
     )
     from net_agent_harness.models.enums import DeviceVendor
 

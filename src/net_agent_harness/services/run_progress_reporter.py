@@ -1,10 +1,13 @@
+from typing import ClassVar
+
 from rich.console import Console
+
 from .run_store import RunStore
 
 console = Console()
 
 class RunProgressReporter:
-    STATUS_STYLES = {
+    STATUS_STYLES: ClassVar[dict[str, tuple[str, str]]] = {
         "running": ("cyan", "white"),
         "blocked": ("bold yellow", "yellow"),
         "failed": ("bold red", "red"),

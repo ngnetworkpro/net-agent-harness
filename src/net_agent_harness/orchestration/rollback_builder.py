@@ -22,7 +22,6 @@ from ..models.changes import (
     VlanChangeOperation,
 )
 
-
 # Reverse dependency priority: lower number = undo first.
 # Interfaces depend on SVIs and VLANs, so they are removed first.
 _OBJECT_TYPE_PRIORITY: dict[str, int] = {

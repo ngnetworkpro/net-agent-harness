@@ -194,9 +194,8 @@ def validate_against_design_policy(
                 )
 
     # Max VLAN count check
-    if policy.max_vlans_per_site is not None:
-        if len(proposed_vlans) > policy.max_vlans_per_site:
-            violations.append(
+    if policy.max_vlans_per_site is not None and len(proposed_vlans) > policy.max_vlans_per_site:
+        violations.append(
                 PolicyViolation(
                     policy_name=policy.name,
                     rule="max_vlans_per_site",

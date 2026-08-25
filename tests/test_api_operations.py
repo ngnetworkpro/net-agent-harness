@@ -1,14 +1,16 @@
-import pytest
 import json
 
+import pytest
+
 from net_agent_harness.adapters.backends.api_operations import (
-    MistApiStrategy,
     MerakiApiStrategy,
+    MistApiStrategy,
     build_api_primary_snippet,
 )
 from net_agent_harness.models.artifacts import ApiRequestPayload
 from net_agent_harness.models.changes import PortSpec
 from net_agent_harness.models.enums import DeviceVendor, RenderBackendType, RenderRole
+
 
 def test_mist_api_strategy_vlan_creation():
     strategy = MistApiStrategy()

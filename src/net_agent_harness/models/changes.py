@@ -1,8 +1,18 @@
+from typing import Any, Literal
+
 from pydantic import BaseModel, Field, model_validator
+
 from .common import ArtifactMeta, ScopeRef
-from .enums import ChangeRisk, TargetScope, PlanDecisionType, NetworkDomain, SwitchportMode, DeviceVendor, ResourceLifecycleState
+from .enums import (
+    ChangeRisk,
+    DeviceVendor,
+    NetworkDomain,
+    PlanDecisionType,
+    ResourceLifecycleState,
+    SwitchportMode,
+    TargetScope,
+)
 from .resources import ResourceRef, ResourceRelationship
-from typing import Any, Union, Literal
 
 
 class VlanAttributes(BaseModel):
@@ -47,11 +57,11 @@ class SviDesiredStateOperation(BaseModel):
     target_device: str | None = Field(default=None, description="Optional single target device name")
     target_devices: list[str] | None = Field(default=None, description="Optional target device names")
 
-DesiredStateOperation = Union[
-    VlanDesiredStateOperation,
-    InterfaceDesiredStateOperation,
-    SviDesiredStateOperation,
-]
+DesiredStateOperation = (
+    VlanDesiredStateOperation
+    | InterfaceDesiredStateOperation
+    | SviDesiredStateOperation
+)
 
 
 class VlanDesiredState(BaseModel):
@@ -181,7 +191,7 @@ class InterfaceChangeOperation(BaseModel):
     status: Literal["apply", "skip", "blocked"] = "apply"
     reason: str | None = None
 
-ChangeOperation = Union[VlanChangeOperation, SviChangeOperation, InterfaceChangeOperation]
+ChangeOperation = VlanChangeOperation | SviChangeOperation | InterfaceChangeOperation
 
 
 class VlanChange(BaseModel):

@@ -1,10 +1,25 @@
 import pytest
-from net_agent_harness.models.artifacts import ConfigRender, ConfigSnippet
-from net_agent_harness.models.changes import ChangeRequest, PlanDecision, ResolvedTarget, RequestedChange, RollbackPlan
-from net_agent_harness.models.common import ArtifactMeta, ScopeRef
-from net_agent_harness.models.enums import PlanDecisionType, TargetScope, NetworkDomain, ChangeRisk, RenderBackendType, RenderRole
-from net_agent_harness.tools.validation_tools import validate_config_render_acceptance
+
 from net_agent_harness.config import settings
+from net_agent_harness.models.artifacts import ConfigRender, ConfigSnippet
+from net_agent_harness.models.changes import (
+    ChangeRequest,
+    PlanDecision,
+    RequestedChange,
+    ResolvedTarget,
+    RollbackPlan,
+)
+from net_agent_harness.models.common import ArtifactMeta, ScopeRef
+from net_agent_harness.models.enums import (
+    ChangeRisk,
+    NetworkDomain,
+    PlanDecisionType,
+    RenderBackendType,
+    RenderRole,
+    TargetScope,
+)
+from net_agent_harness.tools.validation_tools import validate_config_render_acceptance
+
 
 @pytest.fixture
 def base_change_request():

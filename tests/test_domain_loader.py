@@ -1,6 +1,12 @@
 import pytest
-from net_agent_harness.orchestration.domain_loader import load_domain_context, load_render_context, DomainLoadError
+
 from net_agent_harness.models.enums import NetworkDomain
+from net_agent_harness.orchestration.domain_loader import (
+    DomainLoadError,
+    load_domain_context,
+    load_render_context,
+)
+
 
 def test_load_vlan_domain_context():
     ctx = load_domain_context(NetworkDomain.VLAN)
@@ -86,11 +92,11 @@ class TestAssembledVlanSystemPrompt:
     def vlan_prompt(self):
         from net_agent_harness.agents.config_render_agent import render_system_prompt
         from net_agent_harness.models.artifacts import (
-            RenderRequest,
-            VlanRenderPayload,
-            VlanRenderOp,
-            RenderTarget,
             OperationType,
+            RenderRequest,
+            RenderTarget,
+            VlanRenderOp,
+            VlanRenderPayload,
         )
         from net_agent_harness.models.enums import NetworkDomain
 

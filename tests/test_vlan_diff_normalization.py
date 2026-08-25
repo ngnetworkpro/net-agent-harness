@@ -9,21 +9,20 @@ Covers:
 
 from net_agent_harness.models.changes import (
     DeviceChange,
-    InterfaceDesiredStateOperation,
     InterfaceAttributes,
     InterfaceChangeOperation,
+    InterfaceDesiredStateOperation,
+    PortSpec,
     SviChangeOperation,
     VlanChange,
     VlanSpec,
-    PortSpec,
 )
 from net_agent_harness.models.enums import NetworkDomain
 from net_agent_harness.tools.evaluation import (
-    normalize_vlan_diff,
     _merge_device_changes,
     _op_matches_device,
+    normalize_vlan_diff,
 )
-
 
 # ── normalize_vlan_diff unit tests ───────────────────────────────────────────
 

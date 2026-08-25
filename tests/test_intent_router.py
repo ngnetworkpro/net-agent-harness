@@ -1,7 +1,13 @@
 import pytest
 from pydantic import ValidationError
 
-from net_agent_harness.models.enums import Capability, NetworkDomain, RequestKind, ResourceType, RoutingStatus
+from net_agent_harness.models.enums import (
+    Capability,
+    NetworkDomain,
+    RequestKind,
+    ResourceType,
+    RoutingStatus,
+)
 from net_agent_harness.models.routing import RoutedRequest
 from net_agent_harness.orchestration.intent_router import route_intent
 

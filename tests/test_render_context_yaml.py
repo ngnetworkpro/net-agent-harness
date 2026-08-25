@@ -13,7 +13,7 @@ def _load_render_context(filename: str) -> dict:
     )
     data = yaml.safe_load(text)
     if not isinstance(data, dict):
-        raise ValueError(f"{filename} did not parse as a YAML mapping")
+        raise TypeError(f"{filename} did not parse as a YAML mapping")
     for key in ("preamble", "summary_format_rules", "snippet_examples"):
         if key not in data:
             raise KeyError(f"Required key '{key}' missing from {filename}")

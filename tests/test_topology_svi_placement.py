@@ -18,7 +18,6 @@ from net_agent_harness.models.enums import PlanDecisionType
 from net_agent_harness.orchestration.rollback_builder import build_rollback_plan
 from net_agent_harness.tools.evaluation import evaluate_intent_state
 
-
 # ── The canonical desired_state from the VLAN-23 / HQ topology ──────────────
 # This mirrors the exact operations from run-c570bcdd/change_request.json:
 #   - VLAN 23 on both sw1 and fw1

@@ -21,7 +21,6 @@ Usage example (change workflow):
 from ..models.enums import Capability, PlanDecisionType, RunStage
 from .graph_state import DiscoveryGraphState, GraphOutcome, WorkflowGraphState
 
-
 # ---------------------------------------------------------------------------
 # Internal edge functions — pure, deterministic, no side effects.
 # ---------------------------------------------------------------------------

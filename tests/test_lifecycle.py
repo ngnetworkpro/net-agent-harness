@@ -17,7 +17,6 @@ from net_agent_harness.models.lifecycle import (
     validate_transition,
 )
 
-
 # ---------------------------------------------------------------------------
 # ResourceLifecycleState enum
 # ---------------------------------------------------------------------------

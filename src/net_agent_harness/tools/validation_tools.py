@@ -1,6 +1,7 @@
+import contextlib
+import json
 import os
 import re
-import json
 import shutil
 import subprocess  # nosec B404
 import tempfile
@@ -18,8 +19,7 @@ from ..models.artifacts import (
 )
 from ..models.changes import ChangeRequest
 from ..models.common import ArtifactMeta
-from ..models.enums import ValidationStatus, PlanDecisionType, RenderBackendType, RenderRole
-
+from ..models.enums import PlanDecisionType, RenderBackendType, RenderRole, ValidationStatus
 
 REQUIRED_SAFETY_MARKERS = ["! Candidate config"]
 TERRAFORM_MARKERS = (
@@ -556,10 +556,8 @@ def _extract_rendered_vlan_ids(snippets: list[ConfigSnippet]) -> set[int]:
         non_comment_lines = _strip_comment_lines(text)
         vlan_matches = re.findall(r'vlan\s+(\d+)', "\n".join(non_comment_lines), re.IGNORECASE)
         for match in vlan_matches:
-            try:
+            with contextlib.suppress(ValueError):
                 vlan_ids.add(int(match))
-            except ValueError:
-                pass
     return vlan_ids
 
 
@@ -598,16 +596,14 @@ def validate_config_render_acceptance(
         # Rule 9: Valid JSON/YAML
         if snippet.rendered_text:
             text = snippet.rendered_text.strip()
-            if text.startswith("{") or text.startswith("["):
+            if text.startswith(("{", "[")):
                 try:
                     json.loads(text)
                 except json.JSONDecodeError:
                     errors.append(f"Snippet for {device} contains malformed JSON.")
             elif ":" in text and not any(marker in text for marker in REQUIRED_SAFETY_MARKERS):
-                try:
+                with contextlib.suppress(yaml.YAMLError):
                     yaml.safe_load(text)
-                except yaml.YAMLError:
-                    pass # Not failing strictly on YAML since CLI output might look like yaml
                     
         # Rule 4: Fallback snippets explicitly labeled
         if snippet.render_role == RenderRole.FALLBACK:
@@ -617,12 +613,15 @@ def validate_config_render_acceptance(
             device_primaries[device] = device_primaries.get(device, 0) + 1
             
             # Rule 5: User-selected Terraform/Ansible must be primary
-            if selected_backend in ("terraform", "ansible"):
-                if snippet.backend_type and snippet.backend_type.value != selected_backend:
-                    if snippet.backend_type == RenderBackendType.CLI:
-                        pass # Allowed as last resort
-                    else:
-                        errors.append(f"User selected {selected_backend}, but primary snippet for {device} is {snippet.backend_type.value}.")
+            if (
+                selected_backend in ("terraform", "ansible")
+                and snippet.backend_type
+                and snippet.backend_type.value != selected_backend
+            ):
+                if snippet.backend_type == RenderBackendType.CLI:
+                    pass # Allowed as last resort
+                else:
+                    errors.append(f"User selected {selected_backend}, but primary snippet for {device} is {snippet.backend_type.value}.")
             
             # Rule 8: CLI must not be primary when API or selected backend available
             if snippet.backend_type == RenderBackendType.CLI:

@@ -1,6 +1,9 @@
-from pydantic import BaseModel, Field, ConfigDict
-from typing import Literal, Optional, Protocol
 from enum import Enum
+from typing import Literal, Protocol
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from .changes import PortSpec, VlanSpec
 from .common import ArtifactMeta, ScopeRef
 from .enums import (
     AllowedVlansMode,
@@ -11,7 +14,6 @@ from .enums import (
     SwitchportMode,
     ValidationStatus,
 )
-from .changes import VlanSpec, PortSpec
 
 
 class ApiRequestPayload(BaseModel):
@@ -77,7 +79,7 @@ class VlanRenderInput(BaseModel):
     vlans_to_create: list[VlanSpec]
     ports_to_update: list[PortSpec]
     target_device: str
-    vlan_name: Optional[str] = None
+    vlan_name: str | None = None
     mode: Literal["access", "trunk"]
 
 
@@ -176,8 +178,8 @@ class StaticRouteOp(BaseModel):
     next_hop: str
     operation: OperationType
     target: RenderTarget
-    description: Optional[str] = None
-    admin_distance: Optional[int] = None
+    description: str | None = None
+    admin_distance: int | None = None
 
 
 class RoutingRenderPayload(BaseModel):

@@ -4,7 +4,7 @@ from pydantic import ValidationError
 
 from net_agent_harness.models.common import ArtifactMeta
 from net_agent_harness.models.enums import PlanDecisionType, ResourceLifecycleState
-from net_agent_harness.models.ipam import IPAssignmentPlan, IpamSnapshot, PrefixAllocationPlan
+from net_agent_harness.models.ipam import IpamSnapshot, IPAssignmentPlan, PrefixAllocationPlan
 
 
 def _meta(run_id: str = "run-ipam-1") -> ArtifactMeta:

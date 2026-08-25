@@ -1,19 +1,20 @@
 from collections.abc import Callable
 from typing import Any
+
 from ..models.changes import (
-    DeviceChange,
-    PlanDecision,
-    VlanChange,
-    VlanSpec,
-    VlanChangeOperation,
-    SviChangeOperation,
-    InterfaceChangeOperation,
     ChangeOperation,
+    DeviceChange,
+    InterfaceChangeOperation,
+    PlanDecision,
+    SviChangeOperation,
+    VlanChange,
+    VlanChangeOperation,
+    VlanSpec,
 )
-from ..models.enums import NetworkDomain, PlanDecisionType, DeviceVendor
+from ..models.enums import DeviceVendor, NetworkDomain, PlanDecisionType
 from ..models.inventory import DeviceInfo
-from ..tools.vlan_state import compute_vlan_diff, vlan_exists
 from ..orchestration.platform_constraints import validate_platform_constraints
+from ..tools.vlan_state import compute_vlan_diff, vlan_exists
 
 
 def _blocked(reason: str, diff: list[DeviceChange] | None = None) -> PlanDecision:
@@ -54,9 +55,7 @@ def device_supports_svi(device: DeviceInfo) -> bool:
     role = device.role.lower()
     vendor_str = str(device.vendor).lower()
     if "firewall" in role:
-        if "meraki" in vendor_str or (device.platform and "meraki" in device.platform.lower()):
-            return True
-        return False
+        return "meraki" in vendor_str or bool(device.platform and "meraki" in device.platform.lower())
     return True
 
 
@@ -79,8 +78,8 @@ def _load_device_from_inventory(
     device_name: str,
     inventory_source: str,
 ):
-    from .inventory_tools import lookup_device_context_sync
     from ..models.inventory import DeviceInfo
+    from .inventory_tools import lookup_device_context_sync
 
     inventory_data = lookup_device_context_sync(
         inventory_source=inventory_source,
@@ -214,8 +213,8 @@ def _op_matches_device(op: dict[str, Any] | Any, device_name: str) -> bool:
     
     if target_device is not None and target_device != device_name:
         return False
-    if target_devices is not None and device_name not in target_devices:
-        return False
+    if target_devices is not None:
+        return device_name in target_devices
         
     return True
 

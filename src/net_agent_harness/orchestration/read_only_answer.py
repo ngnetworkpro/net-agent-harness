@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from ..models.artifacts import ReadOnlyAnswer
@@ -27,7 +27,7 @@ def build_read_only_answer(
             run_id=run_id,
             artifact_id=f"answer-{run_id}",
             version=1,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             created_by=operator,
         ),
         capability=capability,

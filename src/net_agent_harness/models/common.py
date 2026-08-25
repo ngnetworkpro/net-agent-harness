@@ -1,5 +1,6 @@
-from datetime import datetime, timezone
-from pydantic import BaseModel, Field, ConfigDict
+from datetime import UTC, datetime
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ArtifactMeta(BaseModel):
@@ -15,7 +16,7 @@ class ArtifactMeta(BaseModel):
         description="Downstream artifacts derived from this artifact",
     )
     version: int = Field(default=1, ge=1)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     created_by: str = Field(..., description="Agent or service name")
 
 

@@ -11,16 +11,15 @@ Covers:
 from net_agent_harness.main import _merge_unique_relationships, _merge_unique_resources
 from net_agent_harness.models.resources import (
     DeviceResourceRef,
+    DeviceToTopologyLinkRelationship,
     InterfaceResourceRef,
     InterfaceToSubnetRelationship,
     SiteResourceRef,
     SiteToDeviceRelationship,
     SubnetResourceRef,
     TopologyLinkResourceRef,
-    DeviceToTopologyLinkRelationship,
     VlanResourceRef,
 )
-
 
 # ── canonical_key tests ──────────────────────────────────────────────────────
 

@@ -1,3 +1,5 @@
+from datetime import UTC
+
 from net_agent_harness.adapters.backends.base import BackendAdapter
 from net_agent_harness.models.artifacts import ConfigRender, ExecutionResult
 from net_agent_harness.models.changes import ChangeRequest
@@ -76,11 +78,13 @@ class DirectAPIBackendAdapter(BackendAdapter):
         )
 
     async def apply(self, config_render: ConfigRender) -> ExecutionResult:
-        import httpx
+        from datetime import datetime
         from uuid import uuid4
-        from datetime import datetime, timezone
+
+        import httpx
+
+        from net_agent_harness.models.artifacts import ArtifactMeta, ExecutionResult
         from net_agent_harness.models.enums import RenderBackendType, RenderRole
-        from net_agent_harness.models.artifacts import ExecutionResult, ArtifactMeta
 
         results = []
         errors = []
@@ -107,7 +111,7 @@ class DirectAPIBackendAdapter(BackendAdapter):
                     )
                     response.raise_for_status()
                     results.append(f"Success for {device_name} - {action}")
-                except Exception as e:
+                except (httpx.HTTPError, ValueError) as e:
                     errors.append(f"Error on {device_name} - {action}: {type(e).__name__}({e})")
 
         status = "failed" if errors else "success"
@@ -123,7 +127,7 @@ class DirectAPIBackendAdapter(BackendAdapter):
                 run_id=config_render.meta.run_id,
                 artifact_id=str(uuid4()),
                 version=1,
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
                 created_by="direct-api-backend",
             ),
             backend="direct-api",

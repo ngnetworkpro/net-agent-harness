@@ -14,7 +14,7 @@ from net_agent_harness.models.enums import ChangeRisk, NetworkDomain
 
 
 def test_pydantic_bounds_validation():
-    from net_agent_harness.models.changes import VlanSpec, PortSpec
+    from net_agent_harness.models.changes import PortSpec, VlanSpec
 
     # Test VLAN ID bounds (must be between 1 and 4094)
     with pytest.raises(ValidationError):
@@ -36,7 +36,11 @@ def test_pydantic_bounds_validation():
     assert valid_port.mode == "access"
 
 def test_strict_structural_validation():
-    from net_agent_harness.models.changes import VlanDesiredState, VlanDesiredStateOperation, VlanAttributes
+    from net_agent_harness.models.changes import (
+        VlanAttributes,
+        VlanDesiredState,
+        VlanDesiredStateOperation,
+    )
 
     # Test forbid extra properties
     with pytest.raises(ValidationError):
