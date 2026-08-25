@@ -138,7 +138,7 @@ class TestResolveDependencies:
             required_lifecycle_state=ResourceLifecycleState.APPROVED,
             current_lifecycle_state=ResourceLifecycleState.APPLIED,
         )
-        all_resolved, reasons = resolve_dependencies([dep])
+        all_resolved, _reasons = resolve_dependencies([dep])
         assert all_resolved is True
 
     def test_dependency_not_satisfied_at_lower_state(self):
@@ -183,7 +183,7 @@ class TestResolveDependencies:
                 current_lifecycle_state=ResourceLifecycleState.PLANNED,
             ),
         ]
-        all_resolved, reasons = resolve_dependencies(deps)
+        all_resolved, _reasons = resolve_dependencies(deps)
         assert all_resolved is True
 
     def test_multiple_dependencies_one_blocking(self):
@@ -215,5 +215,5 @@ class TestResolveDependencies:
             required_lifecycle_state=None,
             current_lifecycle_state=ResourceLifecycleState.CURRENT,
         )
-        all_resolved, reasons = resolve_dependencies([dep])
+        all_resolved, _reasons = resolve_dependencies([dep])
         assert all_resolved is True

@@ -9,6 +9,8 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     groups:
       # Optional: Group your updates so you don't get 20 individual PRs
       python-packages:

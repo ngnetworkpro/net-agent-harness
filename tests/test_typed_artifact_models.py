@@ -1,11 +1,12 @@
 """Tests for new typed artifact models (Issue #47)."""
 import pytest
+from pydantic import ValidationError
 
 from net_agent_harness.models.artifacts import (
     AnswerArtifact,
-    IPAMQueryResult,
     IncidentSummaryArtifact,
     InventoryQueryResult,
+    IPAMQueryResult,
     QueryFinding,
     TopologyQueryResult,
 )
@@ -33,7 +34,7 @@ class TestQueryFinding:
         assert f.source == "netbox"
 
     def test_invalid_severity_rejected(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             QueryFinding(code="X", severity="unknown", message="bad")
 
 
@@ -68,11 +69,11 @@ class TestTopologyQueryResult:
         assert result.confidence == 0.9
 
     def test_confidence_clamped(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             TopologyQueryResult(meta=_meta(), question="Q", answer="A", confidence=1.5)
 
     def test_rejects_extra_fields(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             TopologyQueryResult(
                 meta=_meta(), question="Q", answer="A", unexpected_field="oops"
             )

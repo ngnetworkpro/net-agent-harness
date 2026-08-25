@@ -1,10 +1,26 @@
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 from net_agent_harness.adapters.backends.direct_api import DirectAPIBackendAdapter
 from net_agent_harness.models.artifacts import ApiRequestPayload, ArtifactMeta
-from net_agent_harness.models.changes import ChangeRequest, PlanDecision, DeviceChange, VlanChange, VlanSpec, PortSpec, ResolvedTarget
-from net_agent_harness.models.enums import DeviceVendor, NetworkDomain, PlanDecisionType, RenderBackendType, RenderRole
+from net_agent_harness.models.changes import (
+    ChangeRequest,
+    DeviceChange,
+    PlanDecision,
+    PortSpec,
+    ResolvedTarget,
+    VlanChange,
+    VlanSpec,
+)
+from net_agent_harness.models.enums import (
+    DeviceVendor,
+    NetworkDomain,
+    PlanDecisionType,
+    RenderBackendType,
+    RenderRole,
+)
+
 
 @pytest.fixture
 def adapter():

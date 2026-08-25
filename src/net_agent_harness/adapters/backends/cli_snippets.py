@@ -13,7 +13,6 @@ from net_agent_harness.models.artifacts import ConfigSnippet
 from net_agent_harness.models.changes import PortSpec
 from net_agent_harness.models.enums import DeviceVendor, RenderBackendType, RenderRole
 
-
 # ---------------------------------------------------------------------------
 # Base strategy
 # ---------------------------------------------------------------------------

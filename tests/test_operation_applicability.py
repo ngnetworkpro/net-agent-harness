@@ -10,8 +10,8 @@ Covers:
 """
 
 from net_agent_harness.models.changes import (
-    SviChangeOperation,
     InterfaceChangeOperation,
+    SviChangeOperation,
     VlanChangeOperation,
 )
 from net_agent_harness.models.enums import PlanDecisionType

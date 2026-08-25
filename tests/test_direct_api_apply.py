@@ -1,10 +1,17 @@
-import pytest
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock, patch
+
 import httpx
+import pytest
 
 from net_agent_harness.adapters.backends.direct_api import DirectAPIBackendAdapter
-from net_agent_harness.models.artifacts import ApiRequestPayload, ConfigRender, ConfigSnippet, ArtifactMeta
+from net_agent_harness.models.artifacts import (
+    ApiRequestPayload,
+    ArtifactMeta,
+    ConfigRender,
+    ConfigSnippet,
+)
 from net_agent_harness.models.enums import RenderBackendType, RenderRole
+
 
 @pytest.fixture
 def adapter():

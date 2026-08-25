@@ -1,8 +1,8 @@
 """Tests for new workflow runners added in Milestone 5 (Issues #51, #59, #60, #61)."""
 from net_agent_harness.models.enums import Capability, PlanDecisionType, RunStage
 from net_agent_harness.orchestration.graph_runner import (
-    IPAMPlanWorkflowRunner,
     IncidentWorkflowRunner,
+    IPAMPlanWorkflowRunner,
     SiteWorkflowRunner,
     TopologyPlanWorkflowRunner,
 )

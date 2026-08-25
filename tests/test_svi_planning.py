@@ -216,8 +216,8 @@ def test_svi_planning_multidevice_keeps_diff(monkeypatch):
     # Diffs for both devices must be populated
     assert len(decision.diff) == 2
     
-    sw1_change = [dc for dc in decision.diff if dc.device == "sw1"][0]
-    fw_palo_change = [dc for dc in decision.diff if dc.device == "fw-palo"][0]
+    sw1_change = next(dc for dc in decision.diff if dc.device == "sw1")
+    fw_palo_change = next(dc for dc in decision.diff if dc.device == "fw-palo")
 
     # sw1 should have an apply/create operation
     sw1_ops = sw1_change.changes.operations

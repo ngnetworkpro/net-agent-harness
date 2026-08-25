@@ -1,11 +1,11 @@
 from collections.abc import Callable
 from typing import Any
 
+from pydantic import BaseModel
+
+from ..models.changes import VlanDesiredState
 from ..models.enums import NetworkDomain
 
-
-from pydantic import BaseModel
-from ..models.changes import VlanDesiredState
 
 def normalize_desired_state(
     domain: NetworkDomain,
@@ -27,7 +27,7 @@ def _normalize_vlan_desired_state(state: dict[str, Any]) -> dict[str, Any]:
 
     operations = []
 
-    if "vlans" in state and state["vlans"]:
+    if state.get("vlans"):
         for vlan in state["vlans"]:
             operations.append({
                 "object_type": "vlan",
@@ -52,10 +52,7 @@ def _normalize_vlan_desired_state(state: dict[str, Any]) -> dict[str, Any]:
     if interfaces:
         for iface in interfaces:
             mode = iface.get("switchport_mode", "access").lower()
-            if mode == "trunk":
-                op = "set_trunk"
-            else:
-                op = "set_access_vlan"
+            op = "set_trunk" if mode == "trunk" else "set_access_vlan"
             operations.append({
                 "object_type": "interface",
                 "operation": op,

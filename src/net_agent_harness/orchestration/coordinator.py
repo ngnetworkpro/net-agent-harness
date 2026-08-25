@@ -1,17 +1,24 @@
+from datetime import UTC, datetime
 from pathlib import Path
-from datetime import datetime, timezone
 from typing import Any, Literal
-from ..models.artifacts import ConfigRender, ExecutionPlan, ValidationReport, ExecutionResult, ConfigRenderOutput
+
+from ..agents.config_render_agent import change_render_agent
+from ..config import settings
+from ..models.artifacts import (
+    ConfigRender,
+    ConfigRenderOutput,
+    ExecutionPlan,
+    ExecutionResult,
+    ValidationReport,
+)
 from ..models.changes import ChangeRequest
-from ..models.enums import PlanDecisionType, RenderBackendType
 from ..models.common import ArtifactMeta
+from ..models.enums import PlanDecisionType, RenderBackendType
+from ..orchestration.build_render import build_render_input
+from ..policies.approvals import get_backend_adapter, request_approval
 from ..services.artifact_store import ArtifactStore
 from ..services.run_store import RunStore
 from ..tools.validation_tools import validate_config_render
-from ..policies.approvals import get_backend_adapter, request_approval
-from ..config import settings
-from ..agents.config_render_agent import change_render_agent
-from ..orchestration.build_render import build_render_input
 
 
 class StageCoordinator:
@@ -71,7 +78,7 @@ class StageCoordinator:
             run_id=change_request.meta.run_id,
             artifact_id=f"config-render-{change_request.meta.run_id}",
             parent_artifact_id=change_request.meta.artifact_id,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             created_by="stage_coordinator",
         )
         if config_render.meta.artifact_id not in change_request.meta.child_artifact_ids:

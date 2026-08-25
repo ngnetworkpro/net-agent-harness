@@ -14,9 +14,15 @@ Scenarios covered:
 """
 from __future__ import annotations
 
-from net_agent_harness.models.changes import ChangeRequest, ChangeRequestDependency, RequestedChange, RollbackPlan
+from net_agent_harness.models.changes import (
+    ChangeRequest,
+    ChangeRequestDependency,
+    RequestedChange,
+    RollbackPlan,
+)
 from net_agent_harness.models.common import ArtifactMeta, ScopeRef
 from net_agent_harness.models.enums import (
+    Capability,
     ChangeRisk,
     NetworkDomain,
     PlanDecisionType,
@@ -25,7 +31,6 @@ from net_agent_harness.models.enums import (
     RoutingStatus,
     RunStage,
     TargetScope,
-    Capability,
 )
 from net_agent_harness.models.incident import IncidentEvidence, IncidentSummary
 from net_agent_harness.models.ipam import PrefixAllocationPlan
@@ -36,8 +41,8 @@ from net_agent_harness.models.topology import TopologyUpdatePlan
 from net_agent_harness.orchestration.dependency_resolver import resolve_dependencies
 from net_agent_harness.orchestration.dispatcher import DispatchMode, dispatch_request
 from net_agent_harness.orchestration.graph_runner import (
-    IPAMPlanWorkflowRunner,
     IncidentWorkflowRunner,
+    IPAMPlanWorkflowRunner,
     SiteWorkflowRunner,
     TopologyPlanWorkflowRunner,
 )
@@ -332,7 +337,7 @@ class TestPolicyBlockedVlanProposal:
             policy=policy,
         )
         assert len(violations) == 1
-        assert "required_prefix_length" == violations[0].rule
+        assert violations[0].rule == "required_prefix_length"
 
     def test_compliant_vlan_passes_policy(self):
         policy = DesignPolicy(

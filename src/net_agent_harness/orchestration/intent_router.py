@@ -344,8 +344,10 @@ def route_intent(request: str) -> RoutedRequest:
             target_resource_types=target_resource_types,
             rationale=[
                 "Multiple routing outcomes matched with the same score.",
-                f"Top candidates: {best_kind.value}.{best_capability.value} and "
-                f"{ranked_candidates[1][0][0].value}.{ranked_candidates[1][0][1].value}.",
+                (
+                    f"Top candidates: {best_kind.value}.{best_capability.value} and "
+                    f"{ranked_candidates[1][0][0].value}.{ranked_candidates[1][0][1].value}."
+                ),
             ],
         )
 

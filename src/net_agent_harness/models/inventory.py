@@ -1,7 +1,8 @@
+
 from pydantic import BaseModel, Field, model_validator
-from typing import Optional
+
 from .common import ArtifactMeta
-from .enums import DeviceVendor, SwitchportMode, AllowedVlansMode, InterfaceType, SpanningTreeMode
+from .enums import AllowedVlansMode, DeviceVendor, InterfaceType, SpanningTreeMode, SwitchportMode
 
 _TRUNK_DEFAULT_NATIVE_VLAN = 1
 
@@ -12,13 +13,13 @@ class InterfaceInfo(BaseModel):
     enabled: bool = True
     ip_addresses: list[str] = Field(default_factory=list)
     vlan_ids: list[int] = Field(default_factory=list)
-    type: Optional[InterfaceType] = InterfaceType.SWITCHPORT
+    type: InterfaceType | None = InterfaceType.SWITCHPORT
     mtu: int | None = 1500
-    mode: Optional[SwitchportMode] = SwitchportMode.ACCESS
-    stp: Optional[SpanningTreeMode] = SpanningTreeMode.TRUNK
-    access_vlan: Optional[int] = None
-    native_vlan: Optional[int] = None
-    allowed_vlans_mode: Optional[AllowedVlansMode] = None
+    mode: SwitchportMode | None = SwitchportMode.ACCESS
+    stp: SpanningTreeMode | None = SpanningTreeMode.TRUNK
+    access_vlan: int | None = None
+    native_vlan: int | None = None
+    allowed_vlans_mode: AllowedVlansMode | None = None
 
     @model_validator(mode="after")
     def _apply_mode_semantics(self) -> "InterfaceInfo":

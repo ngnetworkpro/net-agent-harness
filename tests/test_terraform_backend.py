@@ -17,7 +17,14 @@ from net_agent_harness.models.changes import (
     VlanSpec,
 )
 from net_agent_harness.models.common import ArtifactMeta, ScopeRef
-from net_agent_harness.models.enums import ChangeRisk, DeviceVendor, NetworkDomain, PlanDecisionType, RenderRole, TargetScope
+from net_agent_harness.models.enums import (
+    ChangeRisk,
+    DeviceVendor,
+    NetworkDomain,
+    PlanDecisionType,
+    RenderRole,
+    TargetScope,
+)
 
 
 def _build_change_request() -> ChangeRequest:
@@ -88,12 +95,12 @@ async def test_render_uses_local_source_by_default(tmp_path, monkeypatch):
         assert "resource " in (s.rendered_text or "")
 
     # CLI fallback for sw1 must contain real VLAN + interface commands
-    sw1_fb = [s for s in fallback if s.device_name == "sw1"][0]
+    sw1_fb = next(s for s in fallback if s.device_name == "sw1")
     assert "set vlans Engineering vlan-id 220" in sw1_fb.rendered_text
     assert "set interfaces ge-0/0/1 unit 0 family ethernet-switching vlan members 220" in sw1_fb.rendered_text
 
     # CLI fallback for sw2 (no ports, only VLAN)
-    sw2_fb = [s for s in fallback if s.device_name == "sw2"][0]
+    sw2_fb = next(s for s in fallback if s.device_name == "sw2")
     assert "set vlans Voice vlan-id 221" in sw2_fb.rendered_text
 
 

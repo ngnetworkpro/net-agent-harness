@@ -13,7 +13,6 @@ from net_agent_harness.adapters.backends.cli_snippets import (
 from net_agent_harness.models.changes import PortSpec
 from net_agent_harness.models.enums import DeviceVendor, RenderBackendType, RenderRole
 
-
 # ---------------------------------------------------------------------------
 # Juniper
 # ---------------------------------------------------------------------------

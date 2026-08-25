@@ -1,6 +1,7 @@
+from unittest.mock import AsyncMock, patch
+
 import pytest
 import typer
-from unittest.mock import patch, AsyncMock
 
 from net_agent_harness.main import ask, show_run
 
@@ -26,13 +27,12 @@ async def test_async_plan_populates_plan_decision_when_llm_returns_none(
     tmp_path,
     monkeypatch
 ) -> None:
+    # Set the runs directory to our temp path so we don't mess with real runs
+    from net_agent_harness.config import settings
+    from net_agent_harness.main import _async_plan
     from net_agent_harness.models.changes import PlannedChange, RequestedChange, RollbackPlan
     from net_agent_harness.models.common import ScopeRef
     from net_agent_harness.models.enums import ChangeRisk, TargetScope
-    from net_agent_harness.main import _async_plan
-
-    # Set the runs directory to our temp path so we don't mess with real runs
-    from net_agent_harness.config import settings
     monkeypatch.setattr(settings, "runs_dir", tmp_path)
 
     # 1. Mock run_agent_with_spinner to return a PlannedChange with plan_decision=None

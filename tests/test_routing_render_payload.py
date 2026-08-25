@@ -1,8 +1,9 @@
 """Tests for RoutingRenderPayload and routing render domain."""
 import pytest
+
 from net_agent_harness.agents.config_render_agent import (
-    _enforce_snippets,
     SUPPORTED_RENDER_DOMAINS,
+    _enforce_snippets,
     render_system_prompt,
 )
 from net_agent_harness.models.artifacts import (
@@ -16,7 +17,6 @@ from net_agent_harness.models.artifacts import (
     StaticRouteOp,
 )
 from net_agent_harness.models.enums import NetworkDomain, RenderBackendType, RenderRole
-
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
 

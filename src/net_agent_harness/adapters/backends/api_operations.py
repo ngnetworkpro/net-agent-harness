@@ -4,9 +4,9 @@ Provides a registry of vendor-specific API strategies that produce
 deterministic API operations from structured plan data.
 """
 
+import json
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-import json
 
 from net_agent_harness.models.artifacts import ApiRequestPayload, ConfigSnippet
 from net_agent_harness.models.changes import PortSpec

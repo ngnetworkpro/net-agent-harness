@@ -8,7 +8,8 @@ This module defines:
   before the device is touched.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from .enums import NetworkDomain, ResourceLifecycleState
@@ -153,8 +154,8 @@ class PlannedTopologyUpdate(BaseModel):
         data = self.model_dump()
         data["lifecycle_state"] = to_state
         if to_state == ResourceLifecycleState.APPLIED and data.get("applied_at") is None:
-            data["applied_at"] = datetime.now(timezone.utc)
+            data["applied_at"] = datetime.now(UTC)
         if to_state == ResourceLifecycleState.VERIFIED and data.get("verified_at") is None:
-            data["verified_at"] = datetime.now(timezone.utc)
+            data["verified_at"] = datetime.now(UTC)
         data.update(kwargs)
         return PlannedTopologyUpdate(**data)

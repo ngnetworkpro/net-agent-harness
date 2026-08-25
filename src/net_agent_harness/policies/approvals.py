@@ -2,10 +2,10 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from net_agent_harness.adapters.backends.base import BackendAdapter
-from net_agent_harness.adapters.backends.terraform import TerraformBackendAdapter
-from net_agent_harness.adapters.backends.direct_api import DirectAPIBackendAdapter
 from net_agent_harness.adapters.backends.ansible import AnsibleBackendAdapter
+from net_agent_harness.adapters.backends.base import BackendAdapter
+from net_agent_harness.adapters.backends.direct_api import DirectAPIBackendAdapter
+from net_agent_harness.adapters.backends.terraform import TerraformBackendAdapter
 from net_agent_harness.config import Settings, settings
 from net_agent_harness.models.artifacts import ConfigRender
 

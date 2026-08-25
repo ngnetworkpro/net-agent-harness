@@ -1,14 +1,16 @@
 import copy
-from functools import lru_cache
 import importlib.resources
+from functools import lru_cache
 from typing import Any
+
 import yaml
-from ..models.domain import DomainContext, TermEntry, IntentSpec, FewShotExample
+
+from ..models.domain import DomainContext, FewShotExample, IntentSpec, TermEntry
 from ..models.enums import NetworkDomain
+
 
 class DomainLoadError(Exception):
     """Raised when a domain context cannot be loaded."""
-    pass
 
 @lru_cache(maxsize=16)
 def _load_domain_context_cached(domain: NetworkDomain) -> DomainContext:
@@ -76,7 +78,7 @@ def load_render_context(domain: str) -> dict[str, Any]:
 
     data = yaml.safe_load(text)
     if not isinstance(data, dict):
-        raise ValueError(
+        raise TypeError(
             f"Render context file '{filename}' did not parse as a YAML mapping"
         )
 

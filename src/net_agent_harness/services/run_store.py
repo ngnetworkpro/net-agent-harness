@@ -1,8 +1,8 @@
 import json
-from datetime import timezone, datetime
+from datetime import UTC, datetime
 from pathlib import Path
-from ..models.enums import Capability, RunStage, WorkflowFamily
 
+from ..models.enums import Capability, RunStage, WorkflowFamily
 
 # Canonical stage sequences for each workflow family.
 # These define the expected progression; actual runs may stop early.
@@ -86,4 +86,4 @@ class RunStore:
 
     @staticmethod
     def _now() -> str:
-        return datetime.now(timezone.utc).isoformat()
+        return datetime.now(UTC).isoformat()

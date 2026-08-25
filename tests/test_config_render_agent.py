@@ -1,10 +1,21 @@
-import pytest
-from net_agent_harness.agents.config_render_agent import _enforce_snippets, render_system_prompt
 from unittest.mock import patch
+
+import pytest
 from pydantic import ValidationError
-from net_agent_harness.models.artifacts import ApiRequestPayload, ConfigRenderOutput, ConfigSnippet, RenderRequest, VlanRenderPayload, VlanRenderOp, RenderTarget
-from net_agent_harness.models.artifacts import OperationType
+
+from net_agent_harness.agents.config_render_agent import _enforce_snippets, render_system_prompt
+from net_agent_harness.models.artifacts import (
+    ApiRequestPayload,
+    ConfigRenderOutput,
+    ConfigSnippet,
+    OperationType,
+    RenderRequest,
+    RenderTarget,
+    VlanRenderOp,
+    VlanRenderPayload,
+)
 from net_agent_harness.models.enums import NetworkDomain, RenderBackendType, RenderRole
+
 
 @pytest.fixture
 def mock_ctx():
@@ -164,9 +175,11 @@ async def test_validator_rejects_domain_specific_snippet_errors(mock_ctx):
             )
         ],
     )
-    with patch.object(VlanRenderPayload, "validate_snippets", return_value=["domain-rule violation"]):
-        with pytest.raises(ValueError, match="Domain-specific snippet validation failed"):
-            await _enforce_snippets(mock_ctx, output)
+    with (
+        patch.object(VlanRenderPayload, "validate_snippets", return_value=["domain-rule violation"]),
+        pytest.raises(ValueError, match="Domain-specific snippet validation failed"),
+    ):
+        await _enforce_snippets(mock_ctx, output)
 
 
 @pytest.mark.asyncio

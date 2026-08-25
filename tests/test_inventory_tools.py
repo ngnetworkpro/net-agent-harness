@@ -1,4 +1,5 @@
 from net_agent_harness.adapters.netbox_adapter import NetBoxAdapter
+from net_agent_harness.models.enums import DeviceVendor
 from net_agent_harness.tools.inventory_tools import (
     _infer_vendor_from_platform,
     _normalize_device,
@@ -8,7 +9,6 @@ from net_agent_harness.tools.inventory_tools import (
     lookup_device_context,
     lookup_device_context_sync,
 )
-from net_agent_harness.models.enums import DeviceVendor
 
 
 def test_netbox_adapter_init():
@@ -62,6 +62,7 @@ def test_netbox_adapter_get():
 
 def test_lookup_inventory_sync_netbox():
     from unittest.mock import patch
+
     from net_agent_harness.tools.inventory_tools import lookup_inventory_sync
 
     with patch("net_agent_harness.adapters.netbox_adapter.build_netbox_adapter_from_settings") as mock_builder:

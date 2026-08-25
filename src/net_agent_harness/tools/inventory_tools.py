@@ -1,8 +1,10 @@
+import contextlib
+
 from pydantic_ai import RunContext
 
 from ..adapters import mock_inventory_adapter
 from ..adapters.netbox_adapter import build_netbox_adapter_from_settings
-from ..models.changes import ScopeRef, ResolvedTarget
+from ..models.changes import ResolvedTarget, ScopeRef
 from ..models.enums import DeviceVendor
 from ..orchestration.run_context import RunContextData
 
@@ -92,10 +94,8 @@ def _normalize_resolved_target(item: dict) -> ResolvedTarget:
     if isinstance(vendor_raw, DeviceVendor):
         vendor = vendor_raw
     elif vendor_raw:
-        try:
+        with contextlib.suppress(ValueError):
             vendor = DeviceVendor(vendor_raw)
-        except ValueError:
-            pass
     if vendor is None:
         vendor = _infer_vendor_from_platform(item.get("platform"))
     name = item.get("name")

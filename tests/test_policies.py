@@ -1,3 +1,5 @@
+import pytest
+
 from net_agent_harness.adapters.inventory_adapter import (
     GuardedInventoryWriteAdapter,
     InventoryWriteRequest,
@@ -19,7 +21,6 @@ from net_agent_harness.policies.approvals import (
     WriteCapability,
     assert_write_allowed,
 )
-import pytest
 
 
 def _settings(**updates: bool) -> Settings:

@@ -1,9 +1,11 @@
 from net_agent_harness.config import Settings
 from net_agent_harness.models.artifacts import ConfigSnippet
-from net_agent_harness.models.enums import RenderBackendType
-from net_agent_harness.models.enums import RenderRole
-from net_agent_harness.orchestration.resolve_backend import aggregate_and_label_snippets
-from net_agent_harness.orchestration.resolve_backend import resolve_render_backend
+from net_agent_harness.models.enums import RenderBackendType, RenderRole
+from net_agent_harness.orchestration.resolve_backend import (
+    aggregate_and_label_snippets,
+    resolve_render_backend,
+)
+
 
 def test_terraform_selected():
     settings = Settings(execution_backend="terraform")

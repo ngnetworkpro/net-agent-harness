@@ -1,5 +1,7 @@
 from dataclasses import dataclass, field
+
 from .enums import NetworkDomain
+
 
 @dataclass
 class TermEntry:

@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Literal
+
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -18,7 +19,7 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     ollama_model: str = 'qwen3.5:9b'
     nvidia_api_key: str | None = None
-    nvidia_model: str = 'minimaxai/minimax-m2.7' # optional 'mistralai/mistral-nemotron'
+    nvidia_model: str = 'minimaxai/minimax-m3' # optional 'mistralai/mistral-nemotron'
     inventory_source: str = 'mock'
     execution_backend: Literal["terraform", "direct_api", "ansible"] = "direct_api"
     terraform_render_source: Literal["auto", "local", "github"] = "auto"
