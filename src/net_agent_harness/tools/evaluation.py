@@ -12,9 +12,14 @@ from ..models.changes import (
     VlanSpec,
 )
 from ..models.enums import DeviceVendor, NetworkDomain, PlanDecisionType
-from ..models.inventory import DeviceInfo
+from ..models.inventory import DeviceInfo, InterfaceInfo
 from ..orchestration.platform_constraints import validate_platform_constraints
 from ..tools.vlan_state import compute_vlan_diff, vlan_exists
+
+
+# Any: heterogeneous desired_state attribute value
+def _is_valid_vlan_id(vlan_id: Any) -> bool:
+    return isinstance(vlan_id, int) and not isinstance(vlan_id, bool) and 1 <= vlan_id <= 4094
 
 
 def _blocked(reason: str, diff: list[DeviceChange] | None = None) -> PlanDecision:
@@ -59,7 +64,7 @@ def device_supports_svi(device: DeviceInfo) -> bool:
     return True
 
 
-def get_existing_svi_interface(device: DeviceInfo, vlan_id: int):
+def get_existing_svi_interface(device: DeviceInfo, vlan_id: int) -> InterfaceInfo | None:
     names_to_check = {
         f"irb.{vlan_id}",
         f"vlan.{vlan_id}",
@@ -77,7 +82,7 @@ def _load_device_from_inventory(
     site: str,
     device_name: str,
     inventory_source: str,
-):
+) -> DeviceInfo | None:
     from ..models.inventory import DeviceInfo
     from .inventory_tools import lookup_device_context_sync
 
@@ -140,8 +145,10 @@ def _operation_completeness(op: ChangeOperation) -> int:
         getattr(op, "interface", None),
         getattr(op, "ip_address", None),
         getattr(op, "prefix_length", None),
+        getattr(op, "native_vlan", None),
+        tuple(getattr(op, "allowed_vlans", ()) or ()),
     ]
-    return sum(1 for value in candidates if value not in (None, ""))
+    return sum(1 for value in candidates if value not in (None, "", ()))
 
 
 def _operation_identity_key(op: ChangeOperation) -> tuple[Any, ...]:
@@ -150,7 +157,14 @@ def _operation_identity_key(op: ChangeOperation) -> tuple[Any, ...]:
     if isinstance(op, SviChangeOperation):
         return ("svi", op.op, op.vlan_id, op.interface, op.ip_address, op.prefix_length)
     if isinstance(op, InterfaceChangeOperation):
-        return ("interface", op.op, op.interface, op.vlan_id)
+        return (
+            "interface",
+            op.op,
+            op.interface,
+            op.vlan_id,
+            op.native_vlan,
+            tuple(op.allowed_vlans),
+        )
     return (
         op.change_type,
         op.op,
@@ -219,11 +233,12 @@ def _op_matches_device(op: dict[str, Any] | Any, device_name: str) -> bool:
     return True
 
 
+# Any: heterogeneous desired_state payload
 def _evaluate_vlan_operations(
     run_id: str,
     site: str,
     device_name: str,
-    desired_state: dict,
+    desired_state: dict[str, Any],
     inventory_source: str,
 ) -> PlanDecision:
     device = _load_device_from_inventory(run_id, site=site, device_name=device_name, inventory_source=inventory_source)
@@ -263,6 +278,9 @@ def _evaluate_vlan_operations(
         attrs = _get_value(vlan_op, "attributes", {})
         vlan_id = _get_value(attrs, "vlan_id")
         vlan_name = _get_value(attrs, "name", "")
+
+        if vlan_id is not None and not _is_valid_vlan_id(vlan_id):
+            return _blocked(f"Invalid vlan_id '{vlan_id}'; must be between 1 and 4094.")
 
         if operation == "ensure_present":
             if vlan_id is None:
@@ -345,14 +363,35 @@ def _evaluate_vlan_operations(
         else:
             return _blocked(f"Unsupported vlan operation '{operation}'.")
 
+    known_interfaces = {i.name for i in device.interfaces}
+
     for iface_op in interface_ops:
         operation = _get_value(iface_op, "operation")
         attrs = _get_value(iface_op, "attributes", {})
         iface_name = _get_value(attrs, "name")
         access_vlan = _get_value(attrs, "access_vlan")
+        native_vlan = _get_value(attrs, "native_vlan")
+        allowed_vlans = list(_get_value(attrs, "allowed_vlans", []) or [])
 
         if iface_name is None:
             return _blocked("interface name is required for interface operations.")
+        if iface_name not in known_interfaces:
+            return _blocked(
+                f"Interface '{iface_name}' was not found on device '{device_name}'."
+            )
+        if access_vlan is not None and not _is_valid_vlan_id(access_vlan):
+            return _blocked(
+                f"Invalid access_vlan '{access_vlan}'; must be between 1 and 4094."
+            )
+        if native_vlan is not None and not _is_valid_vlan_id(native_vlan):
+            return _blocked(
+                f"Invalid native_vlan '{native_vlan}'; must be between 1 and 4094."
+            )
+        for vid in allowed_vlans:
+            if not _is_valid_vlan_id(vid):
+                return _blocked(
+                    f"Invalid allowed VLAN ID '{vid}'; must be between 1 and 4094."
+                )
 
         if operation == "set_access_vlan":
             if access_vlan is None:
@@ -415,15 +454,34 @@ def _evaluate_vlan_operations(
                         ]
                     ),
                 ))
-        elif operation == "set_trunk":
+        elif operation in ("set_trunk", "update_trunk_allowed_vlans", "set_native_vlan"):
+            if operation == "set_native_vlan" and native_vlan is None:
+                return _blocked("native_vlan is required for set_native_vlan operation.")
+            if (
+                operation == "update_trunk_allowed_vlans"
+                and not allowed_vlans
+                and access_vlan is None
+            ):
+                return _blocked(
+                    "allowed_vlans or access_vlan is required for update_trunk_allowed_vlans operation."
+                )
+
+            effective_vlan_id = (
+                access_vlan
+                or (allowed_vlans[0] if allowed_vlans else None)
+                or (native_vlan if native_vlan is not None else 1)
+            )
             device_changes = compute_vlan_diff(
                 intent={
-                    "vlan_id": access_vlan or 1,
+                    "vlan_id": effective_vlan_id,
                     "vlan_name": "",
                     "interfaces": [{
                         "name": iface_name,
                         "switchport_mode": "trunk",
                         "access_vlan": access_vlan,
+                        "native_vlan": native_vlan,
+                        "allowed_vlans": allowed_vlans,
+                        "check_default_vlan": access_vlan is not None,
                     }],
                 },
                 current_state=device,
@@ -439,7 +497,9 @@ def _evaluate_vlan_operations(
                                 change_type="interface",
                                 op="set_trunk",
                                 interface=iface_name,
-                                vlan_id=access_vlan or 1,
+                                vlan_id=effective_vlan_id,
+                                native_vlan=native_vlan,
+                                allowed_vlans=list(allowed_vlans),
                                 status="apply",
                                 reason=(
                                     f"Interface {iface_name} requires trunk"
@@ -463,7 +523,9 @@ def _evaluate_vlan_operations(
                                 change_type="interface",
                                 op="set_trunk",
                                 interface=iface_name,
-                                vlan_id=access_vlan or 1,
+                                vlan_id=effective_vlan_id,
+                                native_vlan=native_vlan,
+                                allowed_vlans=list(allowed_vlans),
                                 status="skip",
                                 reason=(
                                     f"Interface {iface_name} trunk is already correctly"
@@ -485,6 +547,8 @@ def _evaluate_vlan_operations(
 
         if vlan_id is None:
             return _blocked("vlan_id is required for svi operations.")
+        if not _is_valid_vlan_id(vlan_id):
+            return _blocked(f"Invalid vlan_id '{vlan_id}'; must be between 1 and 4094.")
 
         if operation == "ensure_present":
             if not device_supports_svi(device):
@@ -664,12 +728,13 @@ _DOMAIN_EVALUATORS: dict[str, Callable[..., PlanDecision]] = {
 }
 
 
+# Any: heterogeneous desired_state payload
 def evaluate_intent_state(
     run_id: str,
     domain: str,
     site: str | None,
     device_names: list[str],
-    desired_state: dict | None = None,
+    desired_state: dict[str, Any] | None = None,
     inventory_source: str = "mock",
 ) -> PlanDecision:
     """Evaluate whether a normalized intent is already satisfied, requires changes,

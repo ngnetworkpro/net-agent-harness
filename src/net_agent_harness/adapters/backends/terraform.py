@@ -17,7 +17,7 @@ from net_agent_harness.models.artifacts import (
     ConfigSnippet,
     ExecutionResult,
 )
-from net_agent_harness.models.changes import ChangeRequest
+from net_agent_harness.models.changes import ChangeRequest, PortSpec, SviChangeOperation
 from net_agent_harness.models.enums import DeviceVendor, RenderBackendType, RenderRole
 
 
@@ -49,11 +49,24 @@ class TerraformBackendAdapter(BackendAdapter):
         snippets: list[ConfigSnippet] = []
 
         # Build lookup maps from plan diff and resolved targets
-        ports_by_device: dict[str, list] = {}
+        ports_by_device: dict[str, list[PortSpec]] = {}
+        removals_by_device: dict[str, list[int]] = {}
+        svis_by_device: dict[str, list[SviChangeOperation]] = {}
         if change_request.plan_decision:
             for device_change in change_request.plan_decision.diff:
                 if device_change.changes.ports_to_update:
                     ports_by_device[device_change.device] = device_change.changes.ports_to_update
+                if device_change.changes.vlans_to_remove:
+                    removals_by_device[device_change.device] = [
+                        vlan.id for vlan in device_change.changes.vlans_to_remove
+                    ]
+                device_svis = [
+                    op
+                    for op in device_change.changes.operations
+                    if isinstance(op, SviChangeOperation) and op.status == "apply"
+                ]
+                if device_svis:
+                    svis_by_device[device_change.device] = device_svis
 
         vendor_by_device: dict[str, DeviceVendor] = {}
         platform_by_device: dict[str, str | None] = {}
@@ -99,6 +112,8 @@ class TerraformBackendAdapter(BackendAdapter):
                 vlan_additions=additions,
                 port_changes=ports_by_device.get(device_name, []),
                 platform=device_platform,
+                vlan_removals=removals_by_device.get(device_name, []),
+                svi_changes=svis_by_device.get(device_name, []),
             )
             snippets.append(cli_fallback)
 

@@ -2,9 +2,26 @@ import subprocess
 
 import pytest
 
-from net_agent_harness.models.artifacts import ConfigRender, ConfigSnippet
-from net_agent_harness.models.common import ArtifactMeta
-from net_agent_harness.models.enums import RenderBackendType, RenderRole, ValidationStatus
+from net_agent_harness.models.artifacts import ApiRequestPayload, ConfigRender, ConfigSnippet
+from net_agent_harness.models.changes import (
+    ChangeRequest,
+    DeviceChange,
+    PlanDecision,
+    RequestedChange,
+    ResolvedTarget,
+    RollbackPlan,
+    VlanChange,
+    VlanSpec,
+)
+from net_agent_harness.models.common import ArtifactMeta, ScopeRef
+from net_agent_harness.models.enums import (
+    ChangeRisk,
+    NetworkDomain,
+    PlanDecisionType,
+    RenderBackendType,
+    RenderRole,
+    ValidationStatus,
+)
 from net_agent_harness.tools import validation_tools
 from net_agent_harness.tools.validation_tools import validate_config_render
 
@@ -212,3 +229,62 @@ def test_validate_config_render_fails_when_terraform_validate_fails(monkeypatch:
     check_status = {check.check_name: check.status for check in report.check_results}
     assert check_status["terraform_validate_check"] == ValidationStatus.FAIL
     assert check_status["terraform_plan_check"] == ValidationStatus.FAIL
+
+
+def test_validate_config_render_accepts_api_primary_vlan_payload():
+    change_request = ChangeRequest(
+        meta=ArtifactMeta(run_id="run-api-vlan", artifact_id="cr-1", created_by="test"),
+        domain=NetworkDomain.VLAN,
+        scope=ScopeRef(site="HQ", device_names=["sw1"]),
+        target_scope="device",
+        requested_change=RequestedChange(summary="Create VLAN 220", intent="Create VLAN 220"),
+        rollback_plan=RollbackPlan(summary="Remove VLAN 220"),
+        risk=ChangeRisk.LOW,
+        resolved_targets=[
+            ResolvedTarget(
+                name="sw1",
+                site="HQ",
+                role="access-switch",
+                platform="mist",
+                primary_ip="10.0.0.10/24",
+            )
+        ],
+        plan_decision=PlanDecision(
+            decision=PlanDecisionType.APPLY,
+            reason="VLAN 220 needed",
+            diff=[
+                DeviceChange(
+                    device="sw1",
+                    domain=NetworkDomain.VLAN,
+                    changes=VlanChange(
+                        vlans_to_create=[VlanSpec(id=220, name="Eng")],
+                    ),
+                )
+            ],
+        ),
+    )
+    render = ConfigRender(
+        meta=ArtifactMeta(run_id="run-api-vlan", artifact_id="render-1", created_by="test"),
+        summary="API render for VLAN 220",
+        snippets=[
+            ConfigSnippet(
+                device_name="sw1",
+                backend_type=RenderBackendType.API,
+                render_role=RenderRole.PRIMARY,
+                api_payload=ApiRequestPayload(
+                    method="PUT",
+                    path="/api/v1/sites/hq/devices/sw1",
+                    body={"networks": {"Eng": {"vlan_id": 220}}},
+                ),
+                rendered_text='{"networks": {"Eng": {"vlan_id": 220}}}',
+            )
+        ],
+        warnings=[],
+    )
+
+    report = validate_config_render(render, change_request=change_request)
+
+    assert not any(f.code == "MISSING_VLAN_IN_RENDER" for f in report.findings)
+    assert report.overall_status == ValidationStatus.PASS
+    assert report.approved_for_execution is True
+

@@ -227,3 +227,292 @@ def test_evaluate_multi_device_target_device_filtering():
     assert not any(op.change_type == "interface" for op in fw1_ops)
 
 
+def test_evaluate_set_native_vlan_apply_when_differs():
+    decision = evaluate_intent_state(
+        run_id="run-1",
+        domain="vlan",
+        site="HQ",
+        device_names=["sw1"],
+        desired_state={
+            "operations": [
+                {
+                    "object_type": "interface",
+                    "operation": "set_native_vlan",
+                    "attributes": {"name": "mge-0/0/1", "native_vlan": 99},
+                }
+            ]
+        },
+        inventory_source="mock",
+    )
+    assert decision.decision.value == "apply"
+    assert len(decision.diff) == 1
+    ports = decision.diff[0].changes.ports_to_update
+    assert len(ports) == 1
+    assert ports[0].interface == "mge-0/0/1"
+    assert ports[0].native_vlan == 99
+
+
+def test_evaluate_set_native_vlan_noop_when_matches():
+    decision = evaluate_intent_state(
+        run_id="run-1",
+        domain="vlan",
+        site="HQ",
+        device_names=["sw1"],
+        desired_state={
+            "operations": [
+                {
+                    "object_type": "interface",
+                    "operation": "set_native_vlan",
+                    "attributes": {"name": "mge-0/0/1", "native_vlan": 1},
+                }
+            ]
+        },
+        inventory_source="mock",
+    )
+    assert decision.decision.value == "no_op"
+
+
+def test_evaluate_update_trunk_allowed_vlans_noop_when_mode_all():
+    decision = evaluate_intent_state(
+        run_id="run-1",
+        domain="vlan",
+        site="HQ",
+        device_names=["sw1"],
+        desired_state={
+            "operations": [
+                {
+                    "object_type": "interface",
+                    "operation": "update_trunk_allowed_vlans",
+                    "attributes": {"name": "mge-0/0/1", "allowed_vlans": [11, 21]},
+                }
+            ]
+        },
+        inventory_source="mock",
+    )
+    assert decision.decision.value == "no_op"
+
+
+def test_evaluate_update_trunk_allowed_vlans_apply_when_list_missing_vlan(monkeypatch):
+    def _fake_lookup_device_context_sync(
+        inventory_source: str, site: str | None, device_name: str | None
+    ):
+        return {
+            "source": "mock",
+            "device": {
+                "name": device_name,
+                "vendor": "juniper",
+                "role": "access-switch",
+                "site": site,
+                "platform": "mist",
+                "vlans": [{"id": 1, "name": "default"}, {"id": 11, "name": "users"}],
+                "interfaces": [
+                    {
+                        "name": "mge-0/0/1",
+                        "mode": "trunk",
+                        "native_vlan": 1,
+                        "allowed_vlans_mode": "list",
+                        "vlan_ids": [1, 11],
+                    }
+                ],
+            },
+            "interfaces": [],
+            "ip_addresses": [],
+        }
+
+    monkeypatch.setattr(
+        "net_agent_harness.tools.inventory_tools.lookup_device_context_sync",
+        _fake_lookup_device_context_sync,
+    )
+
+    decision = evaluate_intent_state(
+        run_id="run-1",
+        domain="vlan",
+        site="HQ",
+        device_names=["sw1"],
+        desired_state={
+            "operations": [
+                {
+                    "object_type": "interface",
+                    "operation": "update_trunk_allowed_vlans",
+                    "attributes": {"name": "mge-0/0/1", "allowed_vlans": [11, 21]},
+                }
+            ]
+        },
+        inventory_source="mock",
+    )
+    assert decision.decision.value == "apply"
+    ports = decision.diff[0].changes.ports_to_update
+    assert len(ports) == 1
+    assert ports[0].interface == "mge-0/0/1"
+    assert ports[0].allowed_vlans == [11, 21]
+
+
+def test_evaluate_blocks_when_set_native_vlan_missing_native_vlan():
+    decision = evaluate_intent_state(
+        run_id="run-1",
+        domain="vlan",
+        site="HQ",
+        device_names=["sw1"],
+        desired_state={
+            "operations": [
+                {
+                    "object_type": "interface",
+                    "operation": "set_native_vlan",
+                    "attributes": {"name": "mge-0/0/1"},
+                }
+            ]
+        },
+        inventory_source="mock",
+    )
+    assert decision.decision.value == "blocked"
+    assert "native_vlan" in decision.reason
+
+
+def test_evaluate_blocks_when_update_trunk_allowed_vlans_missing_vlans():
+    decision = evaluate_intent_state(
+        run_id="run-1",
+        domain="vlan",
+        site="HQ",
+        device_names=["sw1"],
+        desired_state={
+            "operations": [
+                {
+                    "object_type": "interface",
+                    "operation": "update_trunk_allowed_vlans",
+                    "attributes": {"name": "mge-0/0/1"},
+                }
+            ]
+        },
+        inventory_source="mock",
+    )
+    assert decision.decision.value == "blocked"
+    assert "allowed_vlans" in decision.reason
+
+
+def test_evaluate_blocks_when_interface_not_found_on_device():
+    decision = evaluate_intent_state(
+        run_id="run-1",
+        domain="vlan",
+        site="HQ",
+        device_names=["sw1"],
+        desired_state={
+            "operations": [
+                {
+                    "object_type": "interface",
+                    "operation": "set_access_vlan",
+                    "attributes": {"name": "ge-0/0/99", "access_vlan": 11},
+                }
+            ]
+        },
+        inventory_source="mock",
+    )
+    assert decision.decision.value == "blocked"
+    assert "ge-0/0/99" in decision.reason
+
+
+def test_evaluate_blocks_when_vlan_id_out_of_range():
+    decision = evaluate_intent_state(
+        run_id="run-1",
+        domain="vlan",
+        site="HQ",
+        device_names=["sw1"],
+        desired_state={
+            "operations": [
+                {
+                    "object_type": "interface",
+                    "operation": "set_native_vlan",
+                    "attributes": {"name": "mge-0/0/1", "native_vlan": 5000},
+                }
+            ]
+        },
+        inventory_source="mock",
+    )
+    assert decision.decision.value == "blocked"
+    assert "5000" in decision.reason
+
+
+def test_evaluate_set_trunk_no_vlan_args_on_list_trunk_returns_noop(monkeypatch):
+    def _fake_lookup_device_context_sync(
+        inventory_source: str, site: str | None, device_name: str | None
+    ):
+        return {
+            "source": "mock",
+            "device": {
+                "name": device_name,
+                "vendor": "juniper",
+                "role": "access-switch",
+                "site": site,
+                "platform": "mist",
+                "vlans": [{"id": 11, "name": "users"}],
+                "interfaces": [
+                    {
+                        "name": "mge-0/0/1",
+                        "mode": "trunk",
+                        "native_vlan": 1,
+                        "allowed_vlans_mode": "list",
+                        "vlan_ids": [11, 21],
+                    }
+                ],
+            },
+            "interfaces": [],
+            "ip_addresses": [],
+        }
+
+    monkeypatch.setattr(
+        "net_agent_harness.tools.inventory_tools.lookup_device_context_sync",
+        _fake_lookup_device_context_sync,
+    )
+
+    decision = evaluate_intent_state(
+        run_id="run-1",
+        domain="vlan",
+        site="HQ",
+        device_names=["sw1"],
+        desired_state={
+            "operations": [
+                {
+                    "object_type": "interface",
+                    "operation": "set_trunk",
+                    "attributes": {"name": "mge-0/0/1"},
+                }
+            ]
+        },
+        inventory_source="mock",
+    )
+    assert decision.decision.value == "no_op"
+
+
+def test_rollback_builder_preserves_native_and_allowed_vlans():
+    from net_agent_harness.orchestration.rollback_builder import build_rollback_plan
+
+    decision = evaluate_intent_state(
+        run_id="run-1",
+        domain="vlan",
+        site="HQ",
+        device_names=["sw1"],
+        desired_state={
+            "operations": [
+                {
+                    "object_type": "interface",
+                    "operation": "set_trunk",
+                    "attributes": {
+                        "name": "mge-0/0/1",
+                        "native_vlan": 99,
+                        "allowed_vlans": [11, 21],
+                    },
+                }
+            ]
+        },
+        inventory_source="mock",
+    )
+    assert decision.decision.value == "apply"
+    rollback = build_rollback_plan(decision)
+    assert len(rollback.structured_rollback_steps) == 1
+    step = rollback.structured_rollback_steps[0]
+    assert step.operation == "reset_trunk"
+    assert step.attributes["native_vlan"] == 99
+    assert step.attributes["allowed_vlans"] == [11, 21]
+
+
+
+

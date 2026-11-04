@@ -547,17 +547,41 @@ def _truncate_command_output(result: subprocess.CompletedProcess[str], max_chars
     return output[: max_chars - 3] + "..."
 
 
+def _extract_vlan_ids_from_payload(data: object) -> set[int]:
+    vlan_ids: set[int] = set()
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if key in ("vlan_id", "id") and not isinstance(value, bool):
+                if isinstance(value, int):
+                    vlan_ids.add(value)
+                elif isinstance(value, str):
+                    with contextlib.suppress(ValueError):
+                        vlan_ids.add(int(value))
+            else:
+                vlan_ids.update(_extract_vlan_ids_from_payload(value))
+    elif isinstance(data, list):
+        for item in data:
+            vlan_ids.update(_extract_vlan_ids_from_payload(item))
+    return vlan_ids
+
+
 def _extract_rendered_vlan_ids(snippets: list[ConfigSnippet]) -> set[int]:
     vlan_ids: set[int] = set()
     for snippet in snippets:
         if snippet.render_role != RenderRole.PRIMARY:
             continue
+        if snippet.api_payload and snippet.api_payload.body:
+            vlan_ids.update(_extract_vlan_ids_from_payload(snippet.api_payload.body))
         text = snippet.rendered_text or "\n".join(snippet.commands)
-        non_comment_lines = _strip_comment_lines(text)
-        vlan_matches = re.findall(r'vlan\s+(\d+)', "\n".join(non_comment_lines), re.IGNORECASE)
-        for match in vlan_matches:
-            with contextlib.suppress(ValueError):
-                vlan_ids.add(int(match))
+        non_comment_text = "\n".join(_strip_comment_lines(text))
+        for pattern in (
+            r"vlan\s+(\d+)",
+            r'"(?:vlan_id|id)"\s*:\s*"?(\d+)"?',
+            r"\bvlan_id\s*[:=]\s*(\d+)",
+        ):
+            for match in re.findall(pattern, non_comment_text, re.IGNORECASE):
+                with contextlib.suppress(ValueError):
+                    vlan_ids.add(int(match))
     return vlan_ids
 
 

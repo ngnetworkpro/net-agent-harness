@@ -5,13 +5,28 @@ from net_agent_harness.adapters.backends.cli_snippets import (
     CiscoIosCliStrategy,
     CiscoNxosCliStrategy,
     FortinetCliStrategy,
+    GenericCliStrategy,
     JuniperCliStrategy,
     MerakiCliStrategy,
     PaloAltoCliStrategy,
     build_cli_fallback_snippet,
 )
-from net_agent_harness.models.changes import PortSpec
-from net_agent_harness.models.enums import DeviceVendor, RenderBackendType, RenderRole
+from net_agent_harness.models.changes import PortSpec, SviChangeOperation
+from net_agent_harness.models.enums import (
+    DeviceVendor,
+    RenderBackendType,
+    RenderRole,
+    SwitchportMode,
+)
+
+
+def _trunk_port(interface: str, vlan_id: int, native_vlan: int | None = None) -> PortSpec:
+    return PortSpec(
+        interface=interface,
+        vlan_id=vlan_id,
+        mode=SwitchportMode.TRUNK,
+        native_vlan=native_vlan,
+    )
 
 # ---------------------------------------------------------------------------
 # Juniper
@@ -317,3 +332,175 @@ class TestBuildCliFallbackSnippet:
         )
         assert "Meraki API fallback" in snippet.rendered_text
         assert "POST" in snippet.rendered_text
+
+    def test_forwards_vlan_removals_and_svi_changes(self):
+        snippet = build_cli_fallback_snippet(
+            device_name="sw1",
+            vendor=DeviceVendor.JUNIPER,
+            vlan_additions={},
+            port_changes=[],
+            vlan_removals=[220],
+            svi_changes=[
+                SviChangeOperation(
+                    op="remove",
+                    vlan_id=220,
+                    status="apply",
+                )
+            ],
+        )
+        assert "delete vlans vlan-id 220" in snippet.commands
+        assert "delete interfaces irb unit 220" in snippet.commands
+
+
+class TestExtendedVlanRemovalsNativeVlanAndSvi:
+    def test_juniper_removals_native_vlan_and_svi(self):
+        strategy = JuniperCliStrategy()
+        cmds = strategy.render_vlan_commands(
+            vlan_additions={},
+            port_changes=[_trunk_port("ge-0/0/2", vlan_id=1, native_vlan=99)],
+            vlan_removals=[220],
+            svi_changes=[
+                SviChangeOperation(
+                    op="create",
+                    vlan_id=100,
+                    ip_address="10.100.0.1",
+                    prefix_length=24,
+                    status="apply",
+                ),
+                SviChangeOperation(
+                    op="remove",
+                    vlan_id=220,
+                    status="apply",
+                ),
+            ],
+        )
+        assert "delete vlans vlan-id 220" in cmds
+        assert (
+            "set interfaces ge-0/0/2 unit 0 family ethernet-switching native-vlan-id 99"
+            in cmds
+        )
+        assert (
+            "set interfaces irb unit 100 family inet address 10.100.0.1/24"
+            in cmds
+        )
+        assert "set vlans vlan-id 100 l3-interface irb.100" in cmds
+        assert "delete interfaces irb unit 220" in cmds
+
+    def test_meraki_removals_and_svi(self):
+        strategy = MerakiCliStrategy()
+        cmds = strategy.render_vlan_commands(
+            vlan_additions={},
+            port_changes=[_trunk_port("9", vlan_id=100, native_vlan=50)],
+            vlan_removals=[300],
+            svi_changes=[
+                SviChangeOperation(
+                    op="create",
+                    vlan_id=100,
+                    ip_address="10.100.0.1",
+                    prefix_length=24,
+                    status="apply",
+                ),
+                SviChangeOperation(
+                    op="remove",
+                    vlan_id=300,
+                    status="apply",
+                ),
+            ],
+        )
+        assert "meraki-api: DELETE /networks/{networkId}/vlans/300" in cmds
+        assert (
+            'meraki-api: PUT /devices/{serial}/switch/ports/9 '
+            'body={"type": "trunk", "allowedVlans": "all", "vlan": 50}'
+            in cmds
+        )
+        assert (
+            'meraki-api: PUT /networks/{networkId}/appliance/vlans/100 '
+            'body={"applianceIp": "10.100.0.1", "prefix_length": 24}'
+            in cmds
+        )
+        assert "meraki-api: DELETE /networks/{networkId}/appliance/vlans/300" in cmds
+
+    def test_cisco_ios_removals_native_vlan_and_svi(self):
+        strategy = CiscoIosCliStrategy()
+        cmds = strategy.render_vlan_commands(
+            vlan_additions={},
+            port_changes=[_trunk_port("GigabitEthernet0/2", vlan_id=1, native_vlan=99)],
+            vlan_removals=[100],
+            svi_changes=[
+                SviChangeOperation(
+                    op="create",
+                    vlan_id=200,
+                    ip_address="10.200.0.1",
+                    prefix_length=24,
+                    status="apply",
+                ),
+                SviChangeOperation(
+                    op="remove",
+                    vlan_id=100,
+                    status="apply",
+                ),
+            ],
+        )
+        assert "no vlan 100" in cmds
+        native_idx = cmds.index(" switchport trunk native vlan 99")
+        assert cmds[native_idx + 1] == "exit"
+        assert "interface Vlan200" in cmds
+        assert " ip address 10.200.0.1 255.255.255.0" in cmds
+        assert " no shutdown" in cmds
+        assert "no interface Vlan100" in cmds
+
+    def test_cisco_nxos_removals_native_vlan_and_svi(self):
+        strategy = CiscoNxosCliStrategy()
+        cmds = strategy.render_vlan_commands(
+            vlan_additions={},
+            port_changes=[_trunk_port("Ethernet1/2", vlan_id=1, native_vlan=99)],
+            vlan_removals=[500],
+            svi_changes=[
+                SviChangeOperation(
+                    op="create",
+                    vlan_id=200,
+                    ip_address="10.200.0.1",
+                    prefix_length=24,
+                    status="apply",
+                ),
+                SviChangeOperation(
+                    op="remove",
+                    vlan_id=500,
+                    status="apply",
+                ),
+            ],
+        )
+        assert "no vlan 500" in cmds
+        native_idx = cmds.index("  switchport trunk native vlan 99")
+        assert cmds[native_idx + 1] == "exit"
+        assert "interface Vlan200" in cmds
+        assert "  no shutdown" in cmds
+        assert "  ip address 10.200.0.1/24" in cmds
+        assert "no interface Vlan500" in cmds
+
+    def test_generic_removals_and_svi(self):
+        strategy = GenericCliStrategy()
+        cmds = strategy.render_vlan_commands(
+            vlan_additions={},
+            port_changes=[_trunk_port("eth1", vlan_id=1, native_vlan=99)],
+            vlan_removals=[99],
+            svi_changes=[
+                SviChangeOperation(
+                    op="create",
+                    vlan_id=100,
+                    ip_address="10.100.0.1",
+                    prefix_length=24,
+                    status="apply",
+                ),
+                SviChangeOperation(
+                    op="remove",
+                    vlan_id=99,
+                    status="apply",
+                ),
+            ],
+        )
+        assert "# REMOVE VLAN 99" in cmds
+        assert "# SET interface eth1 mode trunk vlan 1 native_vlan 99" in cmds
+        assert "# CREATE SVI vlan 100 ip 10.100.0.1/24" in cmds
+        assert "# REMOVE SVI vlan 99" in cmds
+

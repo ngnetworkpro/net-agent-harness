@@ -2,7 +2,7 @@ from datetime import UTC
 
 from net_agent_harness.adapters.backends.base import BackendAdapter
 from net_agent_harness.models.artifacts import ConfigRender, ExecutionResult
-from net_agent_harness.models.changes import ChangeRequest
+from net_agent_harness.models.changes import ChangeRequest, PortSpec, SviChangeOperation
 
 
 class DirectAPIBackendAdapter(BackendAdapter):
@@ -17,15 +17,30 @@ class DirectAPIBackendAdapter(BackendAdapter):
             )
 
         additions_by_device: dict[str, dict[str, str]] = {}
-        ports_by_device: dict[str, list] = {}
-        
+        removals_by_device: dict[str, list[int]] = {}
+        ports_by_device: dict[str, list[PortSpec]] = {}
+        svis_by_device: dict[str, list[SviChangeOperation]] = {}
+        devices_in_order: list[str] = []
+
         for device_change in change_request.plan_decision.diff:
             device = device_change.device
+            if device not in additions_by_device:
+                devices_in_order.append(device)
             device_additions = additions_by_device.setdefault(device, {})
             for vlan in device_change.changes.vlans_to_create:
                 device_additions[vlan.name] = str(vlan.id)
+            device_removals = removals_by_device.setdefault(device, [])
+            for vlan in device_change.changes.vlans_to_remove:
+                device_removals.append(vlan.id)
             if device_change.changes.ports_to_update:
-                ports_by_device[device] = device_change.changes.ports_to_update
+                ports_by_device.setdefault(device, []).extend(device_change.changes.ports_to_update)
+            device_svis = [
+                op
+                for op in device_change.changes.operations
+                if isinstance(op, SviChangeOperation) and op.status == "apply"
+            ]
+            if device_svis:
+                svis_by_device.setdefault(device, []).extend(device_svis)
 
         vendor_by_device = {}
         platform_by_device = {}
@@ -38,13 +53,16 @@ class DirectAPIBackendAdapter(BackendAdapter):
         from net_agent_harness.adapters.backends.api_operations import build_api_primary_snippet
         from net_agent_harness.adapters.backends.cli_snippets import build_cli_fallback_snippet
 
-        for device_name, additions in additions_by_device.items():
-            if not additions and not ports_by_device.get(device_name):
+        for device_name in devices_in_order:
+            additions = additions_by_device.get(device_name, {})
+            removals = removals_by_device.get(device_name, [])
+            port_changes = ports_by_device.get(device_name, [])
+            svi_changes = svis_by_device.get(device_name, [])
+            if not additions and not removals and not port_changes and not svi_changes:
                 continue
-            
+
             device_vendor = vendor_by_device.get(device_name)
             device_platform = platform_by_device.get(device_name)
-            port_changes = ports_by_device.get(device_name, [])
 
             primary_snippet = build_api_primary_snippet(
                 device_name=device_name,
@@ -52,6 +70,8 @@ class DirectAPIBackendAdapter(BackendAdapter):
                 vlan_additions=additions,
                 port_changes=port_changes,
                 platform=device_platform,
+                vlan_removals=removals,
+                svi_changes=svi_changes,
             )
             snippets.append(primary_snippet)
 
@@ -61,6 +81,8 @@ class DirectAPIBackendAdapter(BackendAdapter):
                 vlan_additions=additions,
                 port_changes=port_changes,
                 platform=device_platform,
+                vlan_removals=removals,
+                svi_changes=svi_changes,
             )
             snippets.append(cli_fallback)
 

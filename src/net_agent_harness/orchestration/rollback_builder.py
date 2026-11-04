@@ -87,6 +87,10 @@ def _rollback_attributes(op: ChangeOperation) -> dict[str, object]:
     elif isinstance(op, InterfaceChangeOperation):
         attrs["interface"] = op.interface
         attrs["vlan_id"] = op.vlan_id
+        if op.native_vlan is not None:
+            attrs["native_vlan"] = op.native_vlan
+        if op.allowed_vlans:
+            attrs["allowed_vlans"] = list(op.allowed_vlans)
     return attrs
 
 
