@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     ollama_model: str = 'qwen3.5:9b'
     nvidia_api_key: str | None = None
-    nvidia_model: str = 'minimaxai/minimax-m3' # optional 'mistralai/mistral-nemotron'
+    nvidia_model: str = 'minimaxai/minimax-m3.1-flash' # optional 'mistralai/mistral-nemotron'
     inventory_source: str = 'mock'
     execution_backend: Literal["terraform", "direct_api", "ansible"] = "direct_api"
     terraform_render_source: Literal["auto", "local", "github"] = "auto"

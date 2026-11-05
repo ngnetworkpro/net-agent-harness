@@ -24,15 +24,16 @@ The longer-term vision is a harness that supports network-engineering workflows 
 
 ## Current scope
 
-The pipeline currently handles end-to-end VLAN change planning:
+The pipeline currently handles end-to-end VLAN change planning and rendering:
 
 - Accepts a plain-English network change request
 - Deterministically routes the request to a network domain (`vlan`, `acl`, `routing`, `wireless`)
 - Runs a `change_planner` agent that produces a structured `PlannedChange` with scope, risk, assumptions, and a `desired_state`
 - Resolves concrete target devices from inventory (mock or NetBox) in deterministic Python — not from LLM output
-- Evaluates whether the desired state is already satisfied (`no_op`), requires changes (`apply`), or cannot proceed safely (`blocked`), producing a structured `PlanDecision` with a `VlanDiff`
-- Renders a candidate `ConfigRender` artifact from an approved change request
-- Validates the rendered candidate into a `ValidationReport` artifact
+- Evaluates whether the desired state is already satisfied (`no_op`), requires changes (`apply`), or cannot proceed safely (`blocked`), producing a structured `PlanDecision` with per-device `DeviceChange` diffs (`VlanChangeOperation`, `InterfaceChangeOperation`, `SviChangeOperation`)
+- Supports VLAN creation (`ensure_present`, defaulting unnamed VLANs to `str(vlan_id)`) and removal (`ensure_absent`), access port assignments (`set_access_vlan`), trunk updates (`set_trunk`, `set_native_vlan`, `update_trunk_allowed_vlans`), and Layer 3 SVI creation/removal (`ensure_present` / `ensure_absent`)
+- Renders a candidate `ConfigRender` artifact from an approved change request using either `direct_api` (API primary + vendor CLI fallback) or source-backed `terraform` HCL rendering
+- Validates the rendered candidate into a `ValidationReport` artifact and generates an `ExecutionPlan` artifact
 - Keeps execution disabled by default and treats validation/review as the final active stage in this prototype
 - Supports read-only direct-answer queries for topology and IPAM capabilities
 
@@ -40,6 +41,8 @@ The pipeline currently handles end-to-end VLAN change planning:
 
 Recent architecture and safety updates now reflected in this README:
 
+- Completed end-to-end VLAN operations across evaluation, render payload construction, API primary strategies (Juniper Mist, Cisco Meraki), and CLI fallback strategies (JunOS, Meraki, Cisco IOS, Cisco NX-OS): VLAN creation/removal, trunk native VLAN and allowed VLAN list management, and SVI creation/removal
+- Defaulted unnamed VLANs (`name=""` or omitted) to the stringified VLAN ID (`str(vlan_id)`) during desired-state normalization and evaluation so Mist VLAN creations proceed cleanly
 - Hardened artifact and model contracts with stricter schema validation (`extra="forbid"` on key models)
 - Tightened typed modeling for requested desired state, VLAN spec, and port spec fields
 - Added path traversal protection for run/artifact storage identifiers
@@ -186,7 +189,7 @@ The `plan` command:
 1. Routes the request to the `vlan` domain
 2. Calls the `change_planner` agent to extract scope, intent, risk, and desired state
 3. Resolves concrete target devices from inventory
-4. Evaluates whether the desired state already exists, producing a `PlanDecision` of `apply`, `no_op`, or `blocked` with a structured `VlanDiff`
+4. Evaluates whether the desired state already exists, producing a `PlanDecision` of `apply`, `no_op`, or `blocked` with a structured per-device `DeviceChange` diff
 5. Writes `runs/<run_id>/change_request.json` and updates `runs/<run_id>/run.json`
 
 You can then render a candidate config artifact from that saved plan:
@@ -242,6 +245,7 @@ A successful planning run produces a `ChangeRequest` artifact shaped like this:
     "created_at": "2026-05-01T17:00:00Z",
     "created_by": "local-user"
   },
+  "domain": "vlan",
   "scope": {
     "site": "HQ",
     "region": null,
@@ -254,8 +258,9 @@ A successful planning run produces a `ChangeRequest` artifact shaped like this:
       "name": "sw1",
       "site": "HQ",
       "role": "access-switch",
-      "platform": "cisco_ios",
-      "primary_ip": "10.0.0.1"
+      "platform": "mist",
+      "primary_ip": "10.0.0.10/24",
+      "vendor": "juniper"
     }
   ],
   "requested_change": {
@@ -265,23 +270,55 @@ A successful planning run produces a `ChangeRequest` artifact shaped like this:
     "maintenance_window": null,
     "intent": "Add VLAN 220 to access switch sw1 at HQ",
     "constraints": [],
-    "desired_state": { "vlan_id": 220 }
+    "desired_state": {
+      "operations": [
+        {
+          "object_type": "vlan",
+          "operation": "ensure_present",
+          "attributes": { "vlan_id": 220, "name": "220" }
+        }
+      ]
+    }
   },
   "risk": "low",
   "assumptions": ["sw1 is the correct target device"],
   "dependencies": [],
   "rollback_plan": {
-    "summary": "Remove VLAN 220 if validation fails",
-    "trigger_conditions": ["post-change validation failure"],
-    "rollback_steps": ["remove VLAN 220 from the target switch"]
+    "summary": "Rollback 1 operation(s) across 1 device(s): sw1.",
+    "trigger_conditions": ["Validation or post-change connectivity checks fail."],
+    "rollback_steps": ["[sw1] Remove VLAN 220 from sw1."],
+    "structured_rollback_steps": [
+      {
+        "order": 1,
+        "object_type": "vlan",
+        "operation": "remove",
+        "target_device": "sw1",
+        "attributes": { "vlan_id": 220 },
+        "description": "Remove VLAN 220 from sw1."
+      }
+    ]
   },
   "plan_decision": {
     "decision": "apply",
     "reason": "VLAN 220 must be created on sw1.",
-    "diff": {
-      "vlans_to_create": [220],
-      "ports_to_update": []
-    }
+    "diff": [
+      {
+        "device": "sw1",
+        "domain": "vlan",
+        "changes": {
+          "operations": [
+            {
+              "change_type": "vlan",
+              "op": "create",
+              "vlan_id": 220,
+              "name": "220",
+              "status": "apply",
+              "reason": "VLAN 220 does not exist on sw1."
+            }
+          ]
+        }
+      }
+    ]
   }
 }
 ```
@@ -294,25 +331,29 @@ The exact values will vary by model, but the top-level schema remains stable bec
 - `orchestration/read_only_answer.py` — deterministic direct-answer path for read-only capabilities
 - `agents/agent_factory.py` — resolves the configured model provider (Ollama/NVIDIA/OpenAI) and builds PydanticAI agents
 - `agents/change_planner.py` — LLM agent that extracts scope, intent, risk, and desired state from a natural-language request
-- `agents/config_render_agent.py` — stub for model-backed config rendering
+- `agents/config_render_agent.py` — PydanticAI render agent with domain-specific YAML context loading and snippet validation
 - `orchestration/intent_router.py` — deterministically routes plain English to a network domain (`vlan`, `acl`, `routing`, `wireless`)
 - `orchestration/domain_loader.py` — merges core terms and domain-specific YAML glossaries into a unified agent context
-- `orchestration/coordinator.py` — `StageCoordinator` that sequences render and validate stages and produces a `run_summary`
+- `orchestration/desired_state_normalizer.py` — normalizes planner `desired_state` into structured operations and defaults unnamed VLANs to `str(vlan_id)`
+- `orchestration/build_render.py` — translates an approved `ChangeRequest` diff into a typed `RenderRequest` (`VlanRenderPayload`)
+- `orchestration/rollback_builder.py` — deterministically constructs ordered `structured_rollback_steps` from the forward diff
+- `orchestration/platform_constraints.py` — validates planned diffs against platform-specific constraints
+- `orchestration/coordinator.py` — `StageCoordinator` that sequences render, validate, and execution plan stages and produces a `run_summary`
 - `orchestration/stream_utils.py` — spinner utility for long-running agent calls
 - `tools/inventory_tools.py` — `resolve_from_scope` resolves target devices from inventory authoritatively
 - `tools/topology_tools.py` — deterministic topology lookups from inventory snapshots
 - `tools/ipam_tools.py` — read-only IPAM lookups backed by adapter data
-- `tools/evaluation.py` — `evaluate_intent_state` evaluates VLAN intent against current device state to produce a `PlanDecision`
+- `tools/evaluation.py` — `evaluate_intent_state` evaluates VLAN, trunk, and SVI intent against current device state to produce a `PlanDecision`
 - `tools/vlan_state.py` — pure helpers (`vlan_exists`, `trunk_allows_vlan`, `access_vlan_matches`, `compute_vlan_diff`)
-- `tools/config_tools.py` — deterministic stub renderer for candidate config output
-- `tools/validation_tools.py` — validates a `ConfigRender` into a `ValidationReport`
+- `tools/validation_tools.py` — validates a `ConfigRender` into a `ValidationReport` (including consistency, candidate headers, and optional Terraform preflight checks)
+- `adapters/backends/` — backend adapters and vendor strategies (`direct_api.py`, `terraform.py`, `api_operations.py`, `cli_snippets.py`)
 - `adapters/mock_inventory_adapter.py` — synthetic inventory snapshot for local development
 - `adapters/netbox_adapter.py` — optional read-only REST adapter (enabled via `NET_AGENT_INVENTORY_SOURCE=netbox`)
 - `config.py` — loads configuration from environment variables and `.env`
 - `services/run_store.py` — persists and updates run metadata including stage history
 - `services/artifact_store.py` — persists typed Pydantic models as JSON artifacts
 - `services/run_progress_reporter.py` — updates run state and emits progress messages
-- `models/` — all typed artifact contracts (`ChangeRequest`, `PlannedChange`, `PlanDecision`, `ConfigRender`, `ValidationReport`, `InventorySnapshot`)
+- `models/` — all typed artifact contracts (`ChangeRequest`, `PlannedChange`, `PlanDecision`, `ConfigRender`, `ValidationReport`, `ExecutionPlan`, `InventorySnapshot`)
 
 ## Running tests
 
@@ -338,13 +379,11 @@ Network changes carry operational risk. The value of this prototype is proving w
 
 A sensible build order for the next few chunks:
 
-1. Replace the deterministic `config_render` stub with a model-backed render flow
-2. Replace the deterministic validation function with richer validation logic and checks
-3. Extend `evaluate_intent_state` to support ACL, routing, and wireless domains beyond VLAN
-4. Add planner/renderer use of richer device-context lookups when the request implies interface-level work
-5. Add artifact indexes or summaries per run beyond JSON files alone
-6. Add richer policy and approval hooks
-7. Keep execution disabled until the earlier stages are reliable
+1. Extend `evaluate_intent_state` and deterministic backend adapters to support ACL, routing, and wireless domains beyond VLAN
+2. Expand NetBox inventory and IPAM read-only context integration for multi-device and site-wide changes
+3. Add artifact indexes or human-readable markdown summaries per run beyond JSON files alone
+4. Add richer policy and approval hooks for multi-stage workflows
+5. Keep live device execution disabled until all upstream planning, rendering, and validation stages are thoroughly battle-tested
 
 ## Troubleshooting
 
