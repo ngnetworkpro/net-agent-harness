@@ -309,6 +309,72 @@ async def test_stage_coordinator_validates_platform_constraints_per_device(tmp_p
         await coordinator.render(change_request)
 
 
+@pytest.mark.asyncio
+async def test_stage_coordinator_renders_unnamed_mist_vlan_with_defaulted_name(tmp_path, monkeypatch):
+    """Evaluating an unnamed VLAN on a Mist switch defaults its name to str(vlan_id) and renders."""
+    from net_agent_harness.config import settings
+    from net_agent_harness.tools.evaluation import evaluate_intent_state
+
+    monkeypatch.setattr(settings, "execution_backend", "terraform")
+    monkeypatch.setattr(settings, "terraform_render_source", "local")
+
+    source_dir = tmp_path / "tf-source"
+    source_dir.mkdir()
+    (source_dir / "mist_networks.json").write_text('{"Access": {"vlan_id": "11"}}')
+    (source_dir / "mist.tf").write_text('resource "mist_org_networktemplate" "offices" {}')
+    monkeypatch.setattr(settings, "terraform_source_dir", str(source_dir))
+    monkeypatch.setattr(settings, "terraform_source_networks_file", "mist_networks.json")
+    monkeypatch.setattr(settings, "terraform_source_template_file", "mist.tf")
+
+    plan_decision = evaluate_intent_state(
+        run_id="run-unnamed-mist",
+        domain="vlan",
+        site="HQ",
+        device_names=["sw1"],
+        desired_state={
+            "operations": [
+                {
+                    "object_type": "vlan",
+                    "operation": "ensure_present",
+                    "attributes": {"vlan_id": 123, "name": ""},
+                }
+            ]
+        },
+        inventory_source="mock",
+    )
+    assert plan_decision.decision == PlanDecisionType.APPLY
+    assert plan_decision.diff[0].changes.vlans_to_create[0].name == "123"
+
+    store = ArtifactStore(tmp_path / "artifacts")
+    coordinator = StageCoordinator(store)
+    change_request = ChangeRequest(
+        meta=ArtifactMeta(run_id="run-unnamed-mist", artifact_id="cr-unnamed-mist", created_by="test"),
+        domain=NetworkDomain.VLAN,
+        scope=ScopeRef(site="HQ", device_names=["sw1"]),
+        requested_change=RequestedChange(
+            summary="Add VLAN 123",
+            requested_by="tester",
+            intent="Add VLAN 123 to access switch sw1 at HQ",
+        ),
+        target_scope="device",
+        resolved_targets=[
+            ResolvedTarget(name="sw1", site="HQ", role="access-switch", platform="mist", vendor=DeviceVendor.JUNIPER)
+        ],
+        rollback_plan=RollbackPlan(summary="Revert"),
+        risk=ChangeRisk.LOW,
+        plan_decision=plan_decision,
+    )
+
+    render_result, _ = await coordinator.render(change_request)
+    primary_snippets = [s for s in render_result.snippets if s.render_role == RenderRole.PRIMARY]
+    assert len(primary_snippets) == 1
+    assert '"123": {' in (primary_snippets[0].rendered_text or "")
+
+    fallback_snippets = [s for s in render_result.snippets if s.render_role == RenderRole.FALLBACK]
+    assert len(fallback_snippets) == 1
+    assert "set vlans 123 vlan-id 123" in (fallback_snippets[0].rendered_text or "")
+
+
 def test_create_execution_plan_updates_approval_pending_stage(tmp_path):
     artifacts_dir = tmp_path / "artifacts"
     runs_dir = tmp_path / "runs"

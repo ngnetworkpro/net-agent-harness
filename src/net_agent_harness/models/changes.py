@@ -44,7 +44,12 @@ class VlanDesiredStateOperation(BaseModel):
 class InterfaceDesiredStateOperation(BaseModel):
     model_config = {"extra": "forbid"}
     object_type: Literal["interface"]
-    operation: Literal["set_access_vlan", "set_trunk"]
+    operation: Literal[
+        "set_access_vlan",
+        "set_trunk",
+        "update_trunk_allowed_vlans",
+        "set_native_vlan",
+    ]
     attributes: InterfaceAttributes = Field(default_factory=InterfaceAttributes)
     target_device: str | None = Field(default=None, description="Optional single target device name")
     target_devices: list[str] | None = Field(default=None, description="Optional target device names")
@@ -158,8 +163,10 @@ class VlanSpec(BaseModel):
 class PortSpec(BaseModel):
     model_config = {"extra": "forbid"}
     interface: str = Field(description="Interface name, e.g., 'ge-0/0/1'")
-    vlan_id: int = Field(description="VLAN ID to assign", ge=1, le=4094)
+    vlan_id: int = Field(default=1, description="VLAN ID to assign", ge=1, le=4094)
     mode: SwitchportMode = Field(description="'access' or 'trunk'")
+    native_vlan: int | None = None
+    allowed_vlans: list[int] = Field(default_factory=list)
 
 
 class VlanChangeOperation(BaseModel):
@@ -187,7 +194,9 @@ class InterfaceChangeOperation(BaseModel):
     change_type: Literal["interface"] = "interface"
     op: Literal["set_access_vlan", "set_trunk"]
     interface: str
-    vlan_id: int
+    vlan_id: int = 1
+    native_vlan: int | None = None
+    allowed_vlans: list[int] = Field(default_factory=list)
     status: Literal["apply", "skip", "blocked"] = "apply"
     reason: str | None = None
 
@@ -236,13 +245,19 @@ class VlanChange(BaseModel):
             iface = p.get("interface") if isinstance(p, dict) else getattr(p, "interface", None)
             v_id = p.get("vlan_id") if isinstance(p, dict) else getattr(p, "vlan_id", None)
             mode = p.get("mode") if isinstance(p, dict) else getattr(p, "mode", None)
+            native_vlan = p.get("native_vlan") if isinstance(p, dict) else getattr(p, "native_vlan", None)
+            allowed_vlans = (
+                p.get("allowed_vlans", []) if isinstance(p, dict) else getattr(p, "allowed_vlans", [])
+            ) or []
             mode_value = mode.value if isinstance(mode, SwitchportMode) else mode
             op = "set_access_vlan" if mode_value == SwitchportMode.ACCESS.value else "set_trunk"
             operations.append({
                 "change_type": "interface",
                 "op": op,
                 "interface": iface,
-                "vlan_id": v_id,
+                "vlan_id": v_id if v_id is not None else 1,
+                "native_vlan": native_vlan,
+                "allowed_vlans": list(allowed_vlans),
                 "status": "apply",
             })
             
@@ -270,7 +285,15 @@ class VlanChange(BaseModel):
         for op in self.operations:
             if isinstance(op, InterfaceChangeOperation) and op.status == "apply":
                 mode = SwitchportMode.ACCESS if op.op == "set_access_vlan" else SwitchportMode.TRUNK
-                ports.append(PortSpec(interface=op.interface, vlan_id=op.vlan_id, mode=mode))
+                ports.append(
+                    PortSpec(
+                        interface=op.interface,
+                        vlan_id=op.vlan_id,
+                        mode=mode,
+                        native_vlan=op.native_vlan,
+                        allowed_vlans=list(op.allowed_vlans),
+                    )
+                )
         return ports
 
 

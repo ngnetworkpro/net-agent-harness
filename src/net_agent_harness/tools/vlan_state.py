@@ -4,7 +4,7 @@ These functions operate directly on Pydantic model objects and have no side-effe
 making them trivially testable and safe to call from any layer.
 """
 
-from typing import Literal
+from typing import Any, Literal
 
 from ..models.changes import (
     ChangeOperation,
@@ -17,7 +17,8 @@ from ..models.enums import AllowedVlansMode, NetworkDomain, SwitchportMode
 from ..models.inventory import DeviceInfo, InterfaceInfo
 
 
-def compute_vlan_diff(intent: dict, current_state: DeviceInfo) -> list[DeviceChange]:
+# Any: heterogeneous desired_state payload
+def compute_vlan_diff(intent: dict[str, Any], current_state: DeviceInfo) -> list[DeviceChange]:
     """Compare a VLAN provisioning intent against the current device state.
 
     Parameters
@@ -59,8 +60,11 @@ def compute_vlan_diff(intent: dict, current_state: DeviceInfo) -> list[DeviceCha
         changes are required for this device.
     """
     vlan_id: int = intent["vlan_id"]
-    vlan_name: str = intent.get("vlan_name", "")
-    interfaces: list[dict] = intent.get("interfaces", [])
+    vlan_name: str = intent.get("vlan_name") or ""
+    if not vlan_name and current_state.platform and current_state.platform.lower() == "mist":
+        vlan_name = str(vlan_id)
+    # Any: heterogeneous desired_state interface entry
+    interfaces: list[dict[str, Any]] = intent.get("interfaces", [])
 
     operations: list[ChangeOperation] = []
     unknown_interfaces: list[str] = []
@@ -98,26 +102,55 @@ def compute_vlan_diff(intent: dict, current_state: DeviceInfo) -> list[DeviceCha
         mode = SwitchportMode.ACCESS if mode_str == "access" else SwitchportMode.TRUNK
 
         iface_vlan_val = iface.get("access_vlan")
+        raw_native_vlan = iface.get("native_vlan")
+        native_vlan: int | None = raw_native_vlan if isinstance(raw_native_vlan, int) else None
+
+        raw_allowed_vlans = iface.get("allowed_vlans")
+        allowed_vlans: list[int] = (
+            [v for v in raw_allowed_vlans if isinstance(v, int)]
+            if isinstance(raw_allowed_vlans, list)
+            else []
+        )
+
         iface_vlan_id = iface_vlan_val if isinstance(iface_vlan_val, int) else vlan_id
 
         needs_update = False
-        if (
-            mode == SwitchportMode.TRUNK
-            and (iface_obj.mode != SwitchportMode.TRUNK or not trunk_allows_vlan(iface_obj, iface_vlan_id))
-        ) or (
+        if mode == SwitchportMode.TRUNK:
+            if iface_obj.mode != SwitchportMode.TRUNK:
+                needs_update = True
+            else:
+                check_default_vlan = bool(iface.get("check_default_vlan", True))
+                if allowed_vlans and any(
+                    not trunk_allows_vlan(iface_obj, vid) for vid in allowed_vlans
+                ):
+                    needs_update = True
+                if native_vlan is not None and iface_obj.native_vlan != native_vlan:
+                    needs_update = True
+                if (
+                    not allowed_vlans
+                    and native_vlan is None
+                    and check_default_vlan
+                    and not trunk_allows_vlan(iface_obj, iface_vlan_id)
+                ):
+                    needs_update = True
+        elif (
             mode == SwitchportMode.ACCESS
             and (iface_obj.mode != SwitchportMode.ACCESS or not access_vlan_matches(iface_obj, iface_vlan_id))
         ):
             needs_update = True
 
         if needs_update:
-            op: Literal["set_access_vlan", "set_trunk"] = "set_access_vlan" if mode == SwitchportMode.ACCESS else "set_trunk"
+            op: Literal["set_access_vlan", "set_trunk"] = (
+                "set_access_vlan" if mode == SwitchportMode.ACCESS else "set_trunk"
+            )
             operations.append(
                 InterfaceChangeOperation(
                     change_type="interface",
                     op=op,
                     interface=iface_name,
                     vlan_id=iface_vlan_id,
+                    native_vlan=native_vlan if mode == SwitchportMode.TRUNK else None,
+                    allowed_vlans=allowed_vlans if mode == SwitchportMode.TRUNK else [],
                     status="apply",
                 )
             )

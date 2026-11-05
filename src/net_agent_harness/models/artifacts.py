@@ -103,6 +103,10 @@ class VlanRenderOp(BaseModel):
     operation: OperationType
     vlan_name: str | None = None
 
+    @property
+    def name(self) -> str | None:
+        return self.vlan_name
+
 class VlanInterfaceRenderOp(BaseModel):
     model_config = ConfigDict(extra="forbid")
     target: RenderTarget
@@ -112,6 +116,16 @@ class VlanInterfaceRenderOp(BaseModel):
     native_vlan: int | None = None
     allowed_vlans: list[int] = Field(default_factory=list)
     allowed_vlans_mode: AllowedVlansMode | None = None
+
+
+class SviRenderOp(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    target: RenderTarget
+    vlan_id: int
+    operation: OperationType
+    interface_name: str | None = None
+    ip_address: str | None = None
+    prefix_length: int | None = None
 
 
 class RenderPayload(Protocol):
@@ -130,9 +144,10 @@ class VlanRenderPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     vlan_ops: list[VlanRenderOp] = Field(default_factory=list)
     interface_ops: list[VlanInterfaceRenderOp] = Field(default_factory=list)
+    svi_ops: list[SviRenderOp] = Field(default_factory=list)
 
     def has_ops(self) -> bool:
-        return bool(self.vlan_ops or self.interface_ops)
+        return bool(self.vlan_ops or self.interface_ops or self.svi_ops)
 
     def describe_ops(self) -> list[str]:
         payload_parts: list[str] = []
@@ -155,15 +170,56 @@ class VlanRenderPayload(BaseModel):
             payload_parts.append("Interface Operations:")
             for iface_op in self.interface_ops:
                 mode = iface_op.switchport_mode.value if iface_op.switchport_mode else "unknown"
-                access_part = f", access_vlan={iface_op.access_vlan}" if iface_op.access_vlan is not None else ""
+                access_part = (
+                    f", access_vlan={iface_op.access_vlan}"
+                    if iface_op.access_vlan is not None
+                    else ""
+                )
+                native_part = (
+                    f", native_vlan={iface_op.native_vlan}"
+                    if iface_op.native_vlan is not None
+                    else ""
+                )
+                allowed_part = (
+                    f", allowed_vlans={iface_op.allowed_vlans}"
+                    if iface_op.allowed_vlans
+                    else ""
+                )
                 payload_parts.append(
                     "  - "
                     + str(iface_op.interface_name)
                     + ": mode="
                     + mode
                     + access_part
+                    + native_part
+                    + allowed_part
                     + ", target="
                     + str(iface_op.target.name)
+                )
+
+        if self.svi_ops:
+            payload_parts.append("SVI Operations:")
+            for svi_op in self.svi_ops:
+                iface_part = (
+                    f", interface={svi_op.interface_name}"
+                    if svi_op.interface_name is not None
+                    else ""
+                )
+                if svi_op.ip_address is not None and svi_op.prefix_length is not None:
+                    ip_part = f", ip={svi_op.ip_address}/{svi_op.prefix_length}"
+                elif svi_op.ip_address is not None:
+                    ip_part = f", ip={svi_op.ip_address}"
+                else:
+                    ip_part = ""
+                payload_parts.append(
+                    "  - VLAN "
+                    + str(svi_op.vlan_id)
+                    + iface_part
+                    + ip_part
+                    + ", operation="
+                    + str(svi_op.operation.value)
+                    + ", target="
+                    + str(svi_op.target.name)
                 )
 
         return payload_parts

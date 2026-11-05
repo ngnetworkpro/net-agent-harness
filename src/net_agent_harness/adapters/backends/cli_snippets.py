@@ -6,11 +6,12 @@ translates VLAN and interface operations into the appropriate CLI syntax
 for a given vendor/platform combination.
 """
 
+import ipaddress
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
 from net_agent_harness.models.artifacts import ConfigSnippet
-from net_agent_harness.models.changes import PortSpec
+from net_agent_harness.models.changes import PortSpec, SviChangeOperation
 from net_agent_harness.models.enums import DeviceVendor, RenderBackendType, RenderRole
 
 # ---------------------------------------------------------------------------
@@ -25,6 +26,8 @@ class VendorCliStrategy(ABC):
         self,
         vlan_additions: dict[str, str],
         port_changes: list[PortSpec],
+        vlan_removals: Sequence[int] = (),
+        svi_changes: Sequence[SviChangeOperation] = (),
     ) -> list[str]:
         """Return an ordered list of CLI commands for the given plan diff.
 
@@ -34,6 +37,10 @@ class VendorCliStrategy(ABC):
             Mapping of ``{vlan_name: vlan_id}`` for VLANs to create.
         port_changes:
             Interface-level changes from the plan diff.
+        vlan_removals:
+            VLAN IDs to remove.
+        svi_changes:
+            SVI create/remove operations from the plan diff.
         """
 
     def render_comment_banner(self, device_name: str) -> str:
@@ -52,11 +59,16 @@ class JuniperCliStrategy(VendorCliStrategy):
         self,
         vlan_additions: dict[str, str],
         port_changes: list[PortSpec],
+        vlan_removals: Sequence[int] = (),
+        svi_changes: Sequence[SviChangeOperation] = (),
     ) -> list[str]:
         commands: list[str] = []
 
         for vlan_name, vlan_id in vlan_additions.items():
             commands.append(f"set vlans {vlan_name} vlan-id {vlan_id}")
+
+        for removed_vlan_id in vlan_removals:
+            commands.append(f"delete vlans vlan-id {removed_vlan_id}")
 
         for port in port_changes:
             iface = port.interface
@@ -79,6 +91,26 @@ class JuniperCliStrategy(VendorCliStrategy):
                     f"set interfaces {iface} unit 0 family ethernet-switching "
                     f"vlan members all"
                 )
+                if getattr(port, "native_vlan", None) is not None:
+                    commands.append(
+                        f"set interfaces {iface} unit 0 family ethernet-switching "
+                        f"native-vlan-id {port.native_vlan}"
+                    )
+
+        for svi in svi_changes:
+            if svi.status != "apply":
+                continue
+            if svi.op == "create":
+                if svi.ip_address and svi.prefix_length is not None:
+                    commands.append(
+                        f"set interfaces irb unit {svi.vlan_id} family inet "
+                        f"address {svi.ip_address}/{svi.prefix_length}"
+                    )
+                    commands.append(
+                        f"set vlans vlan-id {svi.vlan_id} l3-interface irb.{svi.vlan_id}"
+                    )
+            elif svi.op == "remove":
+                commands.append(f"delete interfaces irb unit {svi.vlan_id}")
 
         return commands
 
@@ -99,6 +131,8 @@ class MerakiCliStrategy(VendorCliStrategy):
         self,
         vlan_additions: dict[str, str],
         port_changes: list[PortSpec],
+        vlan_removals: Sequence[int] = (),
+        svi_changes: Sequence[SviChangeOperation] = (),
     ) -> list[str]:
         commands: list[str] = []
 
@@ -106,6 +140,11 @@ class MerakiCliStrategy(VendorCliStrategy):
             commands.append(
                 f"meraki-api: POST /networks/{{networkId}}/vlans "
                 f"body={{\"id\": {vlan_id}, \"name\": \"{vlan_name}\"}}"
+            )
+
+        for removed_vlan_id in vlan_removals:
+            commands.append(
+                f"meraki-api: DELETE /networks/{{networkId}}/vlans/{removed_vlan_id}"
             )
 
         for port in port_changes:
@@ -116,9 +155,29 @@ class MerakiCliStrategy(VendorCliStrategy):
                     f"body={{\"type\": \"access\", \"vlan\": {port.vlan_id}}}"
                 )
             elif mode == "trunk":
+                if getattr(port, "native_vlan", None) is not None:
+                    commands.append(
+                        f"meraki-api: PUT /devices/{{serial}}/switch/ports/{port.interface} "
+                        f"body={{\"type\": \"trunk\", \"allowedVlans\": \"all\", \"vlan\": {port.native_vlan}}}"
+                    )
+                else:
+                    commands.append(
+                        f"meraki-api: PUT /devices/{{serial}}/switch/ports/{port.interface} "
+                        f"body={{\"type\": \"trunk\", \"allowedVlans\": \"all\"}}"
+                    )
+
+        for svi in svi_changes:
+            if svi.status != "apply":
+                continue
+            if svi.op == "create":
+                if svi.ip_address and svi.prefix_length is not None:
+                    commands.append(
+                        f"meraki-api: PUT /networks/{{networkId}}/appliance/vlans/{svi.vlan_id} "
+                        f"body={{\"applianceIp\": \"{svi.ip_address}\", \"prefix_length\": {svi.prefix_length}}}"
+                    )
+            elif svi.op == "remove":
                 commands.append(
-                    f"meraki-api: PUT /devices/{{serial}}/switch/ports/{port.interface} "
-                    f"body={{\"type\": \"trunk\", \"allowedVlans\": \"all\"}}"
+                    f"meraki-api: DELETE /networks/{{networkId}}/appliance/vlans/{svi.vlan_id}"
                 )
 
         return commands
@@ -138,6 +197,8 @@ class CiscoIosCliStrategy(VendorCliStrategy):
         self,
         vlan_additions: dict[str, str],
         port_changes: list[PortSpec],
+        vlan_removals: Sequence[int] = (),
+        svi_changes: Sequence[SviChangeOperation] = (),
     ) -> list[str]:
         commands: list[str] = []
 
@@ -145,6 +206,9 @@ class CiscoIosCliStrategy(VendorCliStrategy):
             commands.append(f"vlan {vlan_id}")
             commands.append(f" name {vlan_name}")
             commands.append("exit")
+
+        for removed_vlan_id in vlan_removals:
+            commands.append(f"no vlan {removed_vlan_id}")
 
         for port in port_changes:
             iface = port.interface
@@ -156,7 +220,22 @@ class CiscoIosCliStrategy(VendorCliStrategy):
             elif mode == "trunk":
                 commands.append(" switchport mode trunk")
                 commands.append(" switchport trunk allowed vlan all")
+                if getattr(port, "native_vlan", None) is not None:
+                    commands.append(f" switchport trunk native vlan {port.native_vlan}")
             commands.append("exit")
+
+        for svi in svi_changes:
+            if svi.status != "apply":
+                continue
+            if svi.op == "create":
+                if svi.ip_address and svi.prefix_length is not None:
+                    netmask = ipaddress.IPv4Network(f"0.0.0.0/{svi.prefix_length}").netmask
+                    commands.append(f"interface {svi.interface or f'Vlan{svi.vlan_id}'}")
+                    commands.append(f" ip address {svi.ip_address} {netmask}")
+                    commands.append(" no shutdown")
+                    commands.append("exit")
+            elif svi.op == "remove":
+                commands.append(f"no interface {svi.interface or f'Vlan{svi.vlan_id}'}")
 
         return commands
 
@@ -172,6 +251,8 @@ class CiscoNxosCliStrategy(VendorCliStrategy):
         self,
         vlan_additions: dict[str, str],
         port_changes: list[PortSpec],
+        vlan_removals: Sequence[int] = (),
+        svi_changes: Sequence[SviChangeOperation] = (),
     ) -> list[str]:
         commands: list[str] = []
 
@@ -179,6 +260,9 @@ class CiscoNxosCliStrategy(VendorCliStrategy):
             commands.append(f"vlan {vlan_id}")
             commands.append(f"  name {vlan_name}")
             commands.append("exit")
+
+        for removed_vlan_id in vlan_removals:
+            commands.append(f"no vlan {removed_vlan_id}")
 
         for port in port_changes:
             iface = port.interface
@@ -192,7 +276,21 @@ class CiscoNxosCliStrategy(VendorCliStrategy):
                 commands.append("  switchport")
                 commands.append("  switchport mode trunk")
                 commands.append("  switchport trunk allowed vlan all")
+                if getattr(port, "native_vlan", None) is not None:
+                    commands.append(f"  switchport trunk native vlan {port.native_vlan}")
             commands.append("exit")
+
+        for svi in svi_changes:
+            if svi.status != "apply":
+                continue
+            if svi.op == "create":
+                if svi.ip_address and svi.prefix_length is not None:
+                    commands.append(f"interface {svi.interface or f'Vlan{svi.vlan_id}'}")
+                    commands.append("  no shutdown")
+                    commands.append(f"  ip address {svi.ip_address}/{svi.prefix_length}")
+                    commands.append("exit")
+            elif svi.op == "remove":
+                commands.append(f"no interface {svi.interface or f'Vlan{svi.vlan_id}'}")
 
         return commands
 
@@ -202,17 +300,35 @@ class CiscoNxosCliStrategy(VendorCliStrategy):
 # ---------------------------------------------------------------------------
 
 class AristaCliStrategy(VendorCliStrategy):
-    def render_vlan_commands(self, vlan_additions, port_changes):
+    def render_vlan_commands(
+        self,
+        vlan_additions: dict[str, str],
+        port_changes: list[PortSpec],
+        vlan_removals: Sequence[int] = (),
+        svi_changes: Sequence[SviChangeOperation] = (),
+    ) -> list[str]:
         raise NotImplementedError("CLI rendering not yet supported for Arista")
 
 
 class PaloAltoCliStrategy(VendorCliStrategy):
-    def render_vlan_commands(self, vlan_additions, port_changes):
+    def render_vlan_commands(
+        self,
+        vlan_additions: dict[str, str],
+        port_changes: list[PortSpec],
+        vlan_removals: Sequence[int] = (),
+        svi_changes: Sequence[SviChangeOperation] = (),
+    ) -> list[str]:
         raise NotImplementedError("CLI rendering not yet supported for Palo Alto")
 
 
 class FortinetCliStrategy(VendorCliStrategy):
-    def render_vlan_commands(self, vlan_additions, port_changes):
+    def render_vlan_commands(
+        self,
+        vlan_additions: dict[str, str],
+        port_changes: list[PortSpec],
+        vlan_removals: Sequence[int] = (),
+        svi_changes: Sequence[SviChangeOperation] = (),
+    ) -> list[str]:
         raise NotImplementedError("CLI rendering not yet supported for Fortinet")
 
 
@@ -227,15 +343,30 @@ class GenericCliStrategy(VendorCliStrategy):
         self,
         vlan_additions: dict[str, str],
         port_changes: list[PortSpec],
+        vlan_removals: Sequence[int] = (),
+        svi_changes: Sequence[SviChangeOperation] = (),
     ) -> list[str]:
         commands: list[str] = []
         for vlan_name, vlan_id in vlan_additions.items():
             commands.append(f"# CREATE VLAN {vlan_id} name {vlan_name}")
+        for removed_vlan_id in vlan_removals:
+            commands.append(f"# REMOVE VLAN {removed_vlan_id}")
         for port in port_changes:
             mode = port.mode.value if hasattr(port.mode, "value") else port.mode
-            commands.append(
-                f"# SET interface {port.interface} mode {mode} vlan {port.vlan_id}"
-            )
+            line = f"# SET interface {port.interface} mode {mode} vlan {port.vlan_id}"
+            if mode == "trunk" and getattr(port, "native_vlan", None) is not None:
+                line += f" native_vlan {port.native_vlan}"
+            commands.append(line)
+        for svi in svi_changes:
+            if svi.status != "apply":
+                continue
+            if svi.op == "create":
+                if svi.ip_address and svi.prefix_length is not None:
+                    commands.append(
+                        f"# CREATE SVI vlan {svi.vlan_id} ip {svi.ip_address}/{svi.prefix_length}"
+                    )
+            elif svi.op == "remove":
+                commands.append(f"# REMOVE SVI vlan {svi.vlan_id}")
         return commands
 
     def render_comment_banner(self, device_name: str) -> str:
@@ -315,6 +446,8 @@ def build_cli_fallback_snippet(
     vlan_additions: dict[str, str],
     port_changes: Sequence[PortSpec] = (),
     platform: str | None = None,
+    vlan_removals: Sequence[int] = (),
+    svi_changes: Sequence[SviChangeOperation] = (),
 ) -> ConfigSnippet:
     """Build a CLI fallback ConfigSnippet using the appropriate vendor strategy.
 
@@ -333,9 +466,18 @@ def build_cli_fallback_snippet(
     platform:
         Optional platform string for vendor sub-disambiguation
         (e.g., ``"nxos"`` vs ``"ios"`` for Cisco).
+    vlan_removals:
+        VLAN IDs to remove.
+    svi_changes:
+        SVI create/remove operations from the plan diff.
     """
     strategy = _resolve_strategy(vendor, platform)
-    cli_commands = strategy.render_vlan_commands(vlan_additions, list(port_changes))
+    cli_commands = strategy.render_vlan_commands(
+        vlan_additions,
+        list(port_changes),
+        vlan_removals=vlan_removals,
+        svi_changes=svi_changes,
+    )
     banner = strategy.render_comment_banner(device_name)
     rendered_lines = [banner] + cli_commands
 

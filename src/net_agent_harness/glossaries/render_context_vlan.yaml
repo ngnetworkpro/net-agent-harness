@@ -14,7 +14,9 @@ preamble: |
 summary_format_rules: |
   The summary field MUST be derived deterministically from the payload. Use this exact format:
   - For VLAN creation: "Rendered VLAN <id> (<name>) for <device> — <operation>"
+  - For VLAN removal: "Rendered VLAN <id> removal for <device> — <operation>"
   - For interface changes: "Rendered <mode> port <interface> on <device> — <operation>"
+  - For SVI changes: "Rendered SVI for VLAN <id> on <device> — <operation>"
   - For mixed: "Rendered <N> VLAN(s) and <M> interface(s) for <devices>"
   Do NOT use placeholder text like "Awaiting Input" or "Render complete".
 

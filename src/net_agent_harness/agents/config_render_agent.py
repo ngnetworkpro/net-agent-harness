@@ -172,8 +172,9 @@ def render_system_prompt(ctx: RunContext[RenderRequest]) -> str:
     ]
     if domain_val == "vlan":
         parts += [
-            "- vlans: list of objects with id (int) and name (str)",
+            "- vlans: list of objects with id (int), name (str), and operation (ensure_present or remove)",
             "- port_configs: list of objects with port, mode, access_vlan, native_vlan, allowed_vlans_mode",
+            "- svis: list of SVI operations with vlan_id, interface_name, ip_address, prefix_length, and operation",
             "",
             "## allowed_vlans_mode Rule",
             "For trunk ports, always use allowed_vlans_mode=all in API payloads.",
@@ -194,7 +195,9 @@ def render_system_prompt(ctx: RunContext[RenderRequest]) -> str:
     if domain_val == "vlan":
         parts += [
             "- For VLAN creation: include commands that create the VLAN and set its name.",
+            "- For VLAN removal: include commands that delete/remove the VLAN.",
             "- For interface changes: include commands that set the switchport mode and VLAN membership.",
+            "- For SVI changes: include commands that create/configure or remove the VLAN L3 interface and IP address.",
         ]
     elif domain_val == "routing":
         parts += [

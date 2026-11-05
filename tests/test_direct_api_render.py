@@ -10,7 +10,9 @@ from net_agent_harness.models.changes import (
     PlanDecision,
     PortSpec,
     ResolvedTarget,
+    SviChangeOperation,
     VlanChange,
+    VlanChangeOperation,
     VlanSpec,
 )
 from net_agent_harness.models.enums import (
@@ -137,3 +139,47 @@ async def test_direct_api_render_does_not_reinterpret_plan_reason(adapter, chang
 async def test_direct_api_render_no_network_calls(mock_async_client, adapter, change_request):
     await adapter.render(change_request)
     mock_async_client.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_direct_api_render_handles_vlan_removals_and_svi_operations(adapter, change_request):
+    change_request.plan_decision.diff = [
+        DeviceChange(
+            device="sw1",
+            domain=NetworkDomain.VLAN,
+            changes=VlanChange(
+                operations=[
+                    VlanChangeOperation(op="remove", vlan_id=200, status="apply"),
+                    SviChangeOperation(
+                        op="create",
+                        vlan_id=100,
+                        ip_address="10.100.0.1",
+                        prefix_length=24,
+                        status="apply",
+                    ),
+                    SviChangeOperation(
+                        op="remove",
+                        vlan_id=200,
+                        status="apply",
+                    ),
+                ]
+            ),
+        )
+    ]
+
+    render_output = await adapter.render(change_request)
+
+    assert len(render_output.snippets) == 2
+    primary = next(s for s in render_output.snippets if s.render_role == RenderRole.PRIMARY)
+    fallback = next(s for s in render_output.snippets if s.render_role == RenderRole.FALLBACK)
+
+    assert primary.api_payload is not None
+    assert primary.api_payload.body is not None
+    ops = primary.api_payload.body["operations"]
+    actions = [op["action"] for op in ops]
+    assert actions == ["delete_vlan", "create_svi", "delete_svi"]
+
+    assert "delete vlans vlan-id 200" in fallback.commands
+    assert "set interfaces irb unit 100 family inet address 10.100.0.1/24" in fallback.commands
+    assert "delete interfaces irb unit 200" in fallback.commands
+

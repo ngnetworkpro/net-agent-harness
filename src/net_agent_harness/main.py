@@ -341,6 +341,16 @@ async def _async_plan(request: str, operator: str = "local-user"):
             inventory_source=settings.inventory_source,
         )
         planned.plan_decision = plan_decision
+    if (
+        planned.plan_decision is not None
+        and planned.plan_decision.decision == PlanDecisionType.BLOCKED
+        and planned.plan_decision.reason
+    ):
+        blocker_note = f"[blocked] {planned.plan_decision.reason}"
+        if blocker_note not in planned.clarifications_needed:
+            planned.clarifications_needed = [blocker_note] + [
+                c for c in planned.clarifications_needed if not c.startswith("[blocked]")
+            ]
     reporter.update(run_stage.value, "running", "💾 Persisting change request artifact...")
     target_resources, resource_relationships = _build_authoritative_resource_refs(planned, resolved_targets)
     merged_resources = _merge_unique_resources(planned.target_resources, target_resources)
@@ -402,7 +412,18 @@ async def _async_plan(request: str, operator: str = "local-user"):
     elif planned.plan_decision and planned.plan_decision.decision.value == "apply":
         reporter.update(run_stage.value, "completed", f"✅ plan complete: ready for next steps. change request artifact at: {artifact_path}", artifact="change_request")
     else:
-        reporter.update(run_stage.value, "blocked", f"❌ plan blocked. See artifact at: {artifact_path}", artifact="change_request")
+        block_reason = (
+            planned.plan_decision.reason
+            if planned.plan_decision and planned.plan_decision.reason
+            else "No reason provided."
+        )
+        reporter.update(
+            run_stage.value,
+            "blocked",
+            f"❌ plan blocked: {block_reason} See artifact at: {artifact_path}",
+            artifact="change_request",
+            reason=block_reason,
+        )
     
 
 # ── Internal helpers (no Typer annotation constraints) ───────────────────────
