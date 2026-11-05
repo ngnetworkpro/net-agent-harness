@@ -514,5 +514,30 @@ def test_rollback_builder_preserves_native_and_allowed_vlans():
     assert step.attributes["allowed_vlans"] == [11, 21]
 
 
+def test_evaluate_mist_unnamed_vlan_defaults_name_to_vlan_id():
+    for attrs in ({"vlan_id": 123, "name": ""}, {"vlan_id": 123}):
+        decision = evaluate_intent_state(
+            run_id="run-1",
+            domain="vlan",
+            site="HQ",
+            device_names=["sw1"],
+            desired_state={
+                "operations": [
+                    {
+                        "object_type": "vlan",
+                        "operation": "ensure_present",
+                        "attributes": attrs,
+                    }
+                ]
+            },
+            inventory_source="mock",
+        )
+        assert decision.decision.value == "apply"
+        assert len(decision.diff) == 1
+        assert decision.diff[0].changes.vlans_to_create[0].id == 123
+        assert decision.diff[0].changes.vlans_to_create[0].name == "123"
+        op = decision.diff[0].changes.operations[0]
+        assert op.status == "apply"
+        assert op.name == "123"
 
 

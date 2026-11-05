@@ -22,29 +22,43 @@ def normalize_desired_state(
 
 def _normalize_vlan_desired_state(state: dict[str, Any]) -> dict[str, Any]:
     if "operations" in state and isinstance(state["operations"], list):
-        # We assume it's already using the structured format
-        return state
+        # We assume it's already using the structured format; default empty VLAN names on ensure_present
+        normalized_ops = []
+        for op in state["operations"]:
+            if isinstance(op, dict) and op.get("object_type") == "vlan" and op.get("operation") == "ensure_present":
+                attrs = dict(op.get("attributes") or {})
+                vlan_id = attrs.get("vlan_id")
+                if vlan_id is not None and not attrs.get("name"):
+                    attrs["name"] = str(vlan_id)
+                normalized_ops.append({**op, "attributes": attrs})
+            else:
+                normalized_ops.append(op)
+        return {**state, "operations": normalized_ops}
 
     operations = []
 
     if state.get("vlans"):
         for vlan in state["vlans"]:
+            vlan_id = vlan.get("vlan_id")
+            vlan_name = vlan.get("name") or (str(vlan_id) if vlan_id is not None else "")
             operations.append({
                 "object_type": "vlan",
                 "operation": "ensure_present",
                 "attributes": {
-                    "vlan_id": vlan.get("vlan_id"),
-                    "name": vlan.get("name", ""),
+                    "vlan_id": vlan_id,
+                    "name": vlan_name,
                 },
             })
 
     elif "vlan_id" in state:
+        vlan_id = state.get("vlan_id")
+        vlan_name = state.get("name") or (str(vlan_id) if vlan_id is not None else "")
         operations.append({
             "object_type": "vlan",
             "operation": "ensure_present",
             "attributes": {
-                "vlan_id": state.get("vlan_id"),
-                "name": state.get("name", ""),
+                "vlan_id": vlan_id,
+                "name": vlan_name,
             },
         })
 

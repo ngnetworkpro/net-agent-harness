@@ -55,7 +55,7 @@ def build_vlan_render_input(change_request: ChangeRequest) -> RenderRequest:
                 vlan_ops.append(
                     VlanRenderOp(
                         vlan_id=vlan_spec.id,
-                        vlan_name=vlan_spec.name if vlan_spec.name else None,
+                        vlan_name=vlan_spec.name if vlan_spec.name else str(vlan_spec.id),
                         operation=OperationType.ENSURE_PRESENT,
                         target=render_target,
                     )

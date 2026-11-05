@@ -60,7 +60,9 @@ def compute_vlan_diff(intent: dict[str, Any], current_state: DeviceInfo) -> list
         changes are required for this device.
     """
     vlan_id: int = intent["vlan_id"]
-    vlan_name: str = intent.get("vlan_name", "")
+    vlan_name: str = intent.get("vlan_name") or ""
+    if not vlan_name and current_state.platform and current_state.platform.lower() == "mist":
+        vlan_name = str(vlan_id)
     # Any: heterogeneous desired_state interface entry
     interfaces: list[dict[str, Any]] = intent.get("interfaces", [])
 

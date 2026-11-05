@@ -103,6 +103,10 @@ class VlanRenderOp(BaseModel):
     operation: OperationType
     vlan_name: str | None = None
 
+    @property
+    def name(self) -> str | None:
+        return self.vlan_name
+
 class VlanInterfaceRenderOp(BaseModel):
     model_config = ConfigDict(extra="forbid")
     target: RenderTarget

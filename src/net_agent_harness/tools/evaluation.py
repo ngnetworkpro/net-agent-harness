@@ -140,6 +140,12 @@ def _operation_status_priority(op: ChangeOperation) -> int:
 
 
 def _operation_completeness(op: ChangeOperation) -> int:
+    if isinstance(op, VlanChangeOperation):
+        if not op.name:
+            return 0
+        if op.name == str(op.vlan_id):
+            return 1
+        return 2
     candidates = [
         getattr(op, "name", None),
         getattr(op, "interface", None),
@@ -277,7 +283,7 @@ def _evaluate_vlan_operations(
         operation = _get_value(vlan_op, "operation")
         attrs = _get_value(vlan_op, "attributes", {})
         vlan_id = _get_value(attrs, "vlan_id")
-        vlan_name = _get_value(attrs, "name", "")
+        vlan_name = _get_value(attrs, "name") or ""
 
         if vlan_id is not None and not _is_valid_vlan_id(vlan_id):
             return _blocked(f"Invalid vlan_id '{vlan_id}'; must be between 1 and 4094.")
@@ -285,6 +291,8 @@ def _evaluate_vlan_operations(
         if operation == "ensure_present":
             if vlan_id is None:
                 return _blocked("vlan_id is required for vlan ensure_present operation.")
+            if not vlan_name:
+                vlan_name = str(vlan_id)
             if vlan_exists(device, vlan_id):
                 # VLAN already present — emit explicit skip
                 all_device_changes.append(DeviceChange(
@@ -718,6 +726,20 @@ def _evaluate_vlan_operations(
     # Mixed or all-apply: proceed with apply decision
     platform_errors = validate_platform_constraints(device.platform, merged_changes)
     if platform_errors:
+        for op in merged_changes[0].changes.operations:
+            if (
+                isinstance(op, VlanChangeOperation)
+                and op.op == "create"
+                and op.status == "apply"
+                and not op.name
+                and device.platform
+                and device.platform.lower() == "mist"
+            ):
+                op.status = "blocked"
+                op.reason = (
+                    f"Platform 'mist' requires a non-empty VLAN name for VLAN {op.vlan_id} "
+                    f"creation on device '{device_name}'."
+                )
         return _blocked("; ".join(platform_errors), merged_changes)
 
     return _apply("; ".join(reason_parts) + ".", merged_changes)
