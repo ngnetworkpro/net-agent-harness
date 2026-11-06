@@ -459,3 +459,358 @@ def test_evaluate_routing_host_bit_normalization(
     op = route_ops[0]
     assert isinstance(op, StaticRouteOp)
     assert op.prefix == expected_canonical_prefix
+
+
+def test_evaluate_routing_unresolved_explicit_target_device_returns_blocked() -> None:
+    """Explicit target_device not found in inventory snapshot returns BLOCKED."""
+    decision = evaluate_intent_state(
+        run_id="run-routing-unresolved-target",
+        domain="routing",
+        site="HQ",
+        device_names=["sw1"],
+        desired_state={
+            "operations": [
+                {
+                    "target_device": "ghost-switch-99",
+                    "object_type": "static_route",
+                    "operation": "ensure_present",
+                    "attributes": {
+                        "prefix": "10.0.0.0/24",
+                        "next_hop": "192.168.1.1",
+                    },
+                }
+            ]
+        },
+        inventory_source="mock",
+    )
+    assert decision.decision == PlanDecisionType.BLOCKED
+    assert "not found in the inventory snapshot for site 'HQ'" in decision.reason
+
+
+def test_evaluate_routing_unresolved_top_level_target_device_returns_blocked() -> None:
+    """Top-level explicit target_device not found in inventory snapshot returns BLOCKED."""
+    decision = evaluate_intent_state(
+        run_id="run-routing-unresolved-top-target",
+        domain="routing",
+        site="HQ",
+        device_names=["sw1"],
+        desired_state={
+            "target_device": "ghost-switch-top",
+            "operations": [
+                {
+                    "object_type": "static_route",
+                    "operation": "ensure_present",
+                    "attributes": {
+                        "prefix": "10.0.0.0/24",
+                        "next_hop": "192.168.1.1",
+                    },
+                }
+            ],
+        },
+        inventory_source="mock",
+    )
+    assert decision.decision == PlanDecisionType.BLOCKED
+    assert "not found in the inventory snapshot for site 'HQ'" in decision.reason
+
+
+def test_evaluate_routing_unsupported_operation_returns_blocked() -> None:
+    """Unsupported routing operation string returns BLOCKED decision."""
+    decision = evaluate_intent_state(
+        run_id="run-routing-unsupported-op",
+        domain="routing",
+        site="HQ",
+        device_names=["sw1"],
+        desired_state={
+            "operations": [
+                {
+                    "object_type": "static_route",
+                    "operation": "bgp_neighbor",
+                    "attributes": {
+                        "prefix": "10.0.0.0/24",
+                        "next_hop": "192.168.1.1",
+                    },
+                }
+            ]
+        },
+        inventory_source="mock",
+    )
+    assert decision.decision == PlanDecisionType.BLOCKED
+    assert "Unsupported routing operation 'bgp_neighbor'" in decision.reason
+
+
+def test_evaluate_routing_unsupported_object_type_returns_blocked() -> None:
+    """Unsupported routing object_type returns BLOCKED decision."""
+    decision = evaluate_intent_state(
+        run_id="run-routing-unsupported-obj",
+        domain="routing",
+        site="HQ",
+        device_names=["sw1"],
+        desired_state={
+            "operations": [
+                {
+                    "object_type": "ospf_area",
+                    "operation": "ensure_present",
+                    "attributes": {
+                        "prefix": "10.0.0.0/24",
+                        "next_hop": "192.168.1.1",
+                    },
+                }
+            ]
+        },
+        inventory_source="mock",
+    )
+    assert decision.decision == PlanDecisionType.BLOCKED
+    assert "Unsupported routing object_type 'ospf_area'" in decision.reason
+
+
+@pytest.mark.parametrize("op_name", ["ensure_present", "create", "add"])
+def test_evaluate_routing_permitted_add_operations(op_name: str) -> None:
+    """Permitted add/create static route operations resolve to APPLY with ENSURE_PRESENT."""
+    decision = evaluate_intent_state(
+        run_id=f"run-routing-add-{op_name}",
+        domain="routing",
+        site="HQ",
+        device_names=["sw1"],
+        desired_state={
+            "operations": [
+                {
+                    "object_type": "static_route",
+                    "operation": op_name,
+                    "attributes": {
+                        "prefix": "10.33.0.0/24",
+                        "next_hop": "192.168.1.1",
+                    },
+                }
+            ]
+        },
+        inventory_source="mock",
+    )
+    assert decision.decision == PlanDecisionType.APPLY
+    assert decision.diff[0].changes[0].operation == OperationType.ENSURE_PRESENT
+
+
+@pytest.mark.parametrize("op_name", ["ensure_absent", "remove", "delete"])
+def test_evaluate_routing_permitted_remove_operations(monkeypatch: pytest.MonkeyPatch, op_name: str) -> None:
+    """Permitted remove static route operations on existing route resolve to APPLY with REMOVE."""
+    from net_agent_harness.models.inventory import DeviceInfo, RouteInfo
+    from net_agent_harness.models.enums import DeviceVendor
+    import net_agent_harness.tools.evaluation as eval_module
+
+    fake_device = DeviceInfo(
+        name="sw1",
+        vendor=DeviceVendor.CISCO,
+        site="HQ",
+        role="switch",
+        routes=[RouteInfo(prefix="10.33.0.0/24", next_hop="192.168.1.1")],
+    )
+    monkeypatch.setattr(eval_module, "_load_device_from_inventory", lambda *args, **kwargs: fake_device)
+
+    decision = evaluate_intent_state(
+        run_id=f"run-routing-remove-{op_name}",
+        domain="routing",
+        site="HQ",
+        device_names=["sw1"],
+        desired_state={
+            "operations": [
+                {
+                    "object_type": "static_route",
+                    "operation": op_name,
+                    "attributes": {
+                        "prefix": "10.33.0.0/24",
+                        "next_hop": "192.168.1.1",
+                    },
+                }
+            ]
+        },
+        inventory_source="mock",
+    )
+    assert decision.decision == PlanDecisionType.APPLY
+    assert decision.diff[0].changes[0].operation == OperationType.REMOVE
+
+
+def test_evaluate_routing_desired_route_already_present_returns_no_op(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When desired static route already exists in authoritative current state, return NO_OP."""
+    from net_agent_harness.models.inventory import DeviceInfo, RouteInfo
+    from net_agent_harness.models.enums import DeviceVendor
+    import net_agent_harness.tools.evaluation as eval_module
+
+    fake_device = DeviceInfo(
+        name="sw1",
+        vendor=DeviceVendor.CISCO,
+        site="HQ",
+        role="switch",
+        routes=[RouteInfo(prefix="10.50.0.0/24", next_hop="192.168.1.1")],
+    )
+    monkeypatch.setattr(eval_module, "_load_device_from_inventory", lambda *args, **kwargs: fake_device)
+
+    decision = evaluate_intent_state(
+        run_id="run-routing-noop-exists",
+        domain="routing",
+        site="HQ",
+        device_names=["sw1"],
+        desired_state={
+            "operations": [
+                {
+                    "object_type": "static_route",
+                    "operation": "ensure_present",
+                    "attributes": {
+                        "prefix": "10.50.0.0/24",
+                        "next_hop": "192.168.1.1",
+                    },
+                }
+            ]
+        },
+        inventory_source="mock",
+    )
+    assert decision.decision == PlanDecisionType.NO_OP
+    assert "No routing changes required for sw1" in decision.reason
+    assert not decision.diff
+
+
+def test_evaluate_routing_remove_nonexistent_route_returns_no_op(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When attempting to remove a route not in authoritative state, return NO_OP."""
+    from net_agent_harness.models.inventory import DeviceInfo
+    from net_agent_harness.models.enums import DeviceVendor
+    import net_agent_harness.tools.evaluation as eval_module
+
+    fake_device = DeviceInfo(
+        name="sw1",
+        vendor=DeviceVendor.CISCO,
+        site="HQ",
+        role="switch",
+        routes=[],
+    )
+    monkeypatch.setattr(eval_module, "_load_device_from_inventory", lambda *args, **kwargs: fake_device)
+
+    decision = evaluate_intent_state(
+        run_id="run-routing-noop-absent",
+        domain="routing",
+        site="HQ",
+        device_names=["sw1"],
+        desired_state={
+            "operations": [
+                {
+                    "object_type": "static_route",
+                    "operation": "ensure_absent",
+                    "attributes": {
+                        "prefix": "10.99.0.0/24",
+                        "next_hop": "192.168.1.1",
+                    },
+                }
+            ]
+        },
+        inventory_source="mock",
+    )
+    assert decision.decision == PlanDecisionType.NO_OP
+    assert "No routing changes required for sw1" in decision.reason
+    assert not decision.diff
+
+
+def test_evaluate_routing_partial_diff_against_current_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When one route exists and another is new, diff contains only the new route."""
+    from net_agent_harness.models.inventory import DeviceInfo, RouteInfo
+    from net_agent_harness.models.enums import DeviceVendor
+    import net_agent_harness.tools.evaluation as eval_module
+
+    fake_device = DeviceInfo(
+        name="sw1",
+        vendor=DeviceVendor.CISCO,
+        site="HQ",
+        role="switch",
+        routes=[RouteInfo(prefix="10.10.0.0/24", next_hop="192.168.1.1")],
+    )
+    monkeypatch.setattr(eval_module, "_load_device_from_inventory", lambda *args, **kwargs: fake_device)
+
+    decision = evaluate_intent_state(
+        run_id="run-routing-partial",
+        domain="routing",
+        site="HQ",
+        device_names=["sw1"],
+        desired_state={
+            "operations": [
+                {
+                    "object_type": "static_route",
+                    "operation": "ensure_present",
+                    "attributes": {
+                        "prefix": "10.10.0.0/24",
+                        "next_hop": "192.168.1.1",
+                    },
+                },
+                {
+                    "object_type": "static_route",
+                    "operation": "ensure_present",
+                    "attributes": {
+                        "prefix": "10.20.0.0/24",
+                        "next_hop": "192.168.1.1",
+                    },
+                },
+            ]
+        },
+        inventory_source="mock",
+    )
+    assert decision.decision == PlanDecisionType.APPLY
+    assert len(decision.diff[0].changes) == 1
+    assert decision.diff[0].changes[0].prefix == "10.20.0.0/24"
+
+
+def test_routing_evaluation_deterministic_route_ops_order() -> None:
+    """Static route operations in diff are deterministically ordered."""
+    decision = evaluate_intent_state(
+        run_id="run-routing-deterministic",
+        domain="routing",
+        site="HQ",
+        device_names=["sw1"],
+        desired_state={
+            "operations": [
+                {
+                    "object_type": "static_route",
+                    "operation": "ensure_present",
+                    "attributes": {"prefix": "10.90.0.0/24", "next_hop": "192.168.1.1"},
+                },
+                {
+                    "object_type": "static_route",
+                    "operation": "ensure_present",
+                    "attributes": {"prefix": "10.10.0.0/24", "next_hop": "192.168.1.1"},
+                },
+                {
+                    "object_type": "static_route",
+                    "operation": "ensure_present",
+                    "attributes": {"prefix": "10.50.0.0/24", "next_hop": "192.168.1.1"},
+                },
+            ]
+        },
+        inventory_source="mock",
+    )
+    assert decision.decision == PlanDecisionType.APPLY
+    prefixes = [op.prefix for op in decision.diff[0].changes]
+    assert prefixes == ["10.10.0.0/24", "10.50.0.0/24", "10.90.0.0/24"]
+
+
+def test_evaluate_routing_centralized_exception_handling(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unhandled exceptions during routing evaluation are caught and returned as BLOCKED."""
+    import net_agent_harness.tools.evaluation as eval_module
+
+    def _broken_loader(*args, **kwargs):
+        raise RuntimeError("database disk image is malformed")
+
+    monkeypatch.setattr(eval_module, "_load_device_from_inventory", _broken_loader)
+
+    decision = evaluate_intent_state(
+        run_id="run-routing-exception",
+        domain="routing",
+        site="HQ",
+        device_names=["sw1"],
+        desired_state={
+            "operations": [
+                {
+                    "object_type": "static_route",
+                    "operation": "ensure_present",
+                    "attributes": {"prefix": "10.0.0.0/24", "next_hop": "192.168.1.1"},
+                }
+            ]
+        },
+        inventory_source="mock",
+    )
+    assert decision.decision == PlanDecisionType.BLOCKED
+    assert "Routing evaluation failed with error: database disk image is malformed" in decision.reason
+

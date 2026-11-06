@@ -82,6 +82,14 @@ class VlanInfo(BaseModel):
     name: str
     id: int
 
+
+class RouteInfo(BaseModel):
+    prefix: str
+    next_hop: str
+    admin_distance: int | None = None
+    description: str | None = None
+
+
 class DeviceInfo(BaseModel):
     name: str
     vendor: DeviceVendor
@@ -92,6 +100,8 @@ class DeviceInfo(BaseModel):
     platform: str | None = None
     interfaces: list[InterfaceInfo] = Field(default_factory=list)
     vlans: list[VlanInfo] = Field(default_factory=list)
+    routes: list[RouteInfo] = Field(default_factory=list)
+
 
 class InventorySnapshot(BaseModel):
     meta: ArtifactMeta

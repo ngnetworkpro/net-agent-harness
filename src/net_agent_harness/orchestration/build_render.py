@@ -29,7 +29,7 @@ def build_render_input(change_request: ChangeRequest) -> RenderRequest:
 def build_vlan_render_input(change_request: ChangeRequest) -> RenderRequest:
     """Build VLAN render input from change request."""
     if change_request.plan_decision is None:
-        raise ValueError("plan_decision is required to build render input.")
+        raise ValueError("Render rejected: plan_decision is required to build render input.")
     if change_request.plan_decision.decision.value != "apply":
         raise ValueError(
             f"Render rejected: plan decision is '{change_request.plan_decision.decision.value}', expected 'apply'."
@@ -137,14 +137,17 @@ def build_vlan_render_input(change_request: ChangeRequest) -> RenderRequest:
 
 def build_routing_render_input(change_request: ChangeRequest) -> RenderRequest:
     """Build routing render input from change request."""
+    if change_request is None:
+        raise ValueError("Render rejected: change_request is required to build render input.")
+
     if change_request.plan_decision is None:
-        raise ValueError("plan_decision is required to build render input.")
+        raise ValueError("Render rejected: plan_decision is required to build render input.")
 
     decision_val = getattr(
         change_request.plan_decision.decision,
         "value",
         str(change_request.plan_decision.decision),
-    )
+    ).lower()
     if decision_val != "apply":
         raise ValueError(
             f"Render rejected: plan decision is '{decision_val}', expected 'apply'."
@@ -181,6 +184,11 @@ def build_routing_render_input(change_request: ChangeRequest) -> RenderRequest:
 
     if change_request.routing_payload and getattr(change_request.routing_payload, "route_ops", None):
         for op in change_request.routing_payload.route_ops:
+            op_status = getattr(op, "status", "apply")
+            if str(op_status).lower() != "apply":
+                raise ValueError(
+                    f"Render rejected: route operation for prefix '{getattr(op, 'prefix', 'unknown')}' has non-apply status '{op_status}'."
+                )
             target_name = getattr(op.target, "name", None) if getattr(op, "target", None) else None
             if not target_name:
                 raise ValueError(
@@ -214,6 +222,20 @@ def build_routing_render_input(change_request: ChangeRequest) -> RenderRequest:
                 raw_ops = [change.changes]
 
             for diff_op in raw_ops:
+                raw_status = (
+                    getattr(diff_op, "status", None)
+                    if not isinstance(diff_op, dict)
+                    else diff_op.get("status")
+                )
+                if raw_status is not None and str(raw_status).lower() != "apply":
+                    prefix_hint = (
+                        getattr(diff_op, "prefix", None)
+                        if not isinstance(diff_op, dict)
+                        else diff_op.get("prefix", "unknown")
+                    )
+                    raise ValueError(
+                        f"Render rejected: route operation for prefix '{prefix_hint}' has non-apply status '{raw_status}'."
+                    )
                 if isinstance(diff_op, StaticRouteOp):
                     route_ops.append(
                         StaticRouteOp(
@@ -234,6 +256,17 @@ def build_routing_render_input(change_request: ChangeRequest) -> RenderRequest:
                         raise ValueError(
                             f"Render rejected: invalid static route operation in diff for device '{change.device}': {err}"
                         ) from err
+
+    # Deterministic sorting
+    route_ops.sort(
+        key=lambda ro: (
+            getattr(ro.target, "name", "") or "",
+            ro.prefix,
+            ro.next_hop,
+            getattr(ro.operation, "value", str(ro.operation)),
+            ro.admin_distance or 0,
+        )
+    )
 
     intent_type = (
         change_request.requested_change.intent
