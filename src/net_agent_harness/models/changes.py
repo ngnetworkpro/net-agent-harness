@@ -1,8 +1,13 @@
+from __future__ import annotations
+
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from .artifacts import RoutingRenderPayload, StaticRouteOp
 from .common import ArtifactMeta, ScopeRef
+
+__all__ = ["RoutingRenderPayload", "StaticRouteOp"]
 from .enums import (
     ChangeRisk,
     DeviceVendor,
@@ -301,7 +306,9 @@ class DeviceChange(BaseModel):
     model_config = {"extra": "forbid"}
     device: str = Field(description="Hostname of the target device")
     domain: NetworkDomain = Field(description="Network domain: vlan, acl, routing, etc.")
-    changes: VlanChange = Field(description="Typed change payload for the domain")
+    changes: VlanChange | Any = Field(
+        description="Typed change payload for the domain"
+    )
 
 
 class VlanDiff(BaseModel):
@@ -439,4 +446,8 @@ class ChangeRequest(BaseModel):
     plan_decision: PlanDecision | None = Field(
         default=None,
         description="Structured no_op/apply/blocked decision carried through from the planner.",
+    )
+    routing_payload: RoutingRenderPayload | None = Field(
+        default=None,
+        description="Optional routing render payload containing static route operations.",
     )

@@ -1,5 +1,8 @@
 from collections.abc import Callable
+import ipaddress
 from typing import Any
+
+from ..models.artifacts import OperationType, RenderTarget, StaticRouteOp
 
 from ..models.changes import (
     ChangeOperation,
@@ -234,7 +237,9 @@ def _op_matches_device(op: dict[str, Any] | Any, device_name: str) -> bool:
     if target_device is not None and target_device != device_name:
         return False
     if target_devices is not None:
-        return device_name in target_devices
+        if isinstance(target_devices, (list, tuple, set)):
+            return device_name in target_devices
+        return False
         
     return True
 
@@ -745,8 +750,139 @@ def _evaluate_vlan_operations(
     return _apply("; ".join(reason_parts) + ".", merged_changes)
 
 
+def _evaluate_routing_operations(
+    run_id: str,
+    site: str,
+    device_name: str,
+    desired_state: dict[str, Any],
+    inventory_source: str,
+) -> PlanDecision:
+    try:
+        if not isinstance(desired_state, dict):
+            return _blocked("desired_state must be a dictionary.")
+
+        device = _load_device_from_inventory(
+            run_id, site=site, device_name=device_name, inventory_source=inventory_source
+        )
+        if device is None:
+            return _blocked(
+                f"Device '{device_name}' was not found in the inventory snapshot for site '{site}'. "
+                "Verify the device name and site."
+            )
+
+        operations = desired_state.get("operations")
+        if operations is None:
+            if "routes" in desired_state:
+                routes = desired_state["routes"]
+                if not isinstance(routes, list):
+                    return _blocked("desired_state.routes must be a list of routing operations.")
+                operations = routes
+            elif "prefix" in desired_state or "next_hop" in desired_state:
+                operations = [desired_state]
+            else:
+                return _blocked("desired_state does not contain valid routing operations.")
+        elif not isinstance(operations, list):
+            return _blocked("desired_state.operations must be a list of routing operations.")
+
+        if not operations:
+            return _blocked("desired_state.operations is required for routing operations.")
+
+        target = RenderTarget(
+            name=device.name,
+            site=device.site,
+            role=device.role,
+            platform=device.platform,
+            primary_ip=device.management_ip,
+        )
+
+        route_ops: list[StaticRouteOp] = []
+        reason_parts: list[str] = []
+
+        for op in operations:
+            if not isinstance(op, dict):
+                return _blocked("Each routing operation must be a dictionary.")
+
+            target_device = _get_value(op, "target_device")
+            if target_device is not None and not isinstance(target_device, str):
+                return _blocked(f"Invalid target_device '{target_device}'. Must be a string.")
+
+            target_devices = _get_value(op, "target_devices")
+            if target_devices is not None and not isinstance(target_devices, (list, tuple, set)):
+                return _blocked(f"Invalid target_devices '{target_devices}'. Must be a list of device names.")
+
+            if not _op_matches_device(op, device_name):
+                continue
+
+            attrs = _get_value(op, "attributes", {}) if "attributes" in op else op
+            if not isinstance(attrs, dict):
+                return _blocked("Operation attributes must be a dictionary.")
+
+            prefix = _get_value(attrs, "prefix") or _get_value(attrs, "subnet")
+            next_hop = _get_value(attrs, "next_hop")
+            op_name = _get_value(op, "operation", "ensure_present")
+            description = _get_value(attrs, "description")
+            admin_distance = _get_value(attrs, "admin_distance")
+
+            if not prefix:
+                return _blocked("prefix is required for static route operation.")
+            try:
+                net = ipaddress.ip_network(str(prefix), strict=False)
+            except (ValueError, TypeError):
+                return _blocked(f"Invalid prefix '{prefix}'. Must be a valid CIDR network prefix.")
+            prefix_str = str(net)
+
+            if not next_hop:
+                return _blocked("next_hop is required for static route operation.")
+            try:
+                nh_ip = ipaddress.ip_address(str(next_hop))
+            except (ValueError, TypeError):
+                return _blocked(f"Invalid next_hop '{next_hop}'. Must be a valid IP address.")
+            next_hop_str = str(nh_ip)
+
+            if admin_distance is not None:
+                if (
+                    isinstance(admin_distance, bool)
+                    or not isinstance(admin_distance, int)
+                    or not (1 <= admin_distance <= 255)
+                ):
+                    return _blocked(f"Invalid admin_distance '{admin_distance}'. Must be between 1 and 255.")
+
+            op_type = (
+                OperationType.REMOVE
+                if op_name in ("ensure_absent", "remove", "delete")
+                else OperationType.ENSURE_PRESENT
+            )
+
+            route_op = StaticRouteOp(
+                prefix=prefix_str,
+                next_hop=next_hop_str,
+                operation=op_type,
+                target=target,
+                description=str(description) if description is not None else None,
+                admin_distance=admin_distance,
+            )
+            route_ops.append(route_op)
+            if op_type == OperationType.ENSURE_PRESENT:
+                reason_parts.append(f"Static route {prefix_str} via {next_hop_str} must be created on {device_name}")
+            else:
+                reason_parts.append(f"Static route {prefix_str} must be removed from {device_name}")
+
+        if not route_ops:
+            return _no_op(f"No routing changes required for {device_name}.")
+
+        device_change = DeviceChange(
+            device=device_name,
+            domain=NetworkDomain.ROUTING,
+            changes=route_ops,
+        )
+        return _apply("; ".join(reason_parts) + ".", [device_change])
+    except Exception as e:
+        return _blocked(f"Routing evaluation failed with error: {e}")
+
+
 _DOMAIN_EVALUATORS: dict[str, Callable[..., PlanDecision]] = {
     "vlan": _evaluate_vlan_operations,
+    "routing": _evaluate_routing_operations,
 }
 
 
@@ -765,6 +901,9 @@ def evaluate_intent_state(
     Returns a PlanDecision with list[DeviceChange] diff.
     """
 
+    if desired_state is not None and not isinstance(desired_state, dict):
+        return _blocked("desired_state must be a dictionary.")
+
     desired_state = desired_state or {}
 
     if not site:
@@ -777,16 +916,19 @@ def evaluate_intent_state(
     if evaluator is None:
         return _blocked(f"Unsupported evaluation domain '{domain}'.")
 
-    decisions = []
-    for device_name in device_names:
-        decision = evaluator(
-            run_id=run_id,
-            site=site,
-            device_name=device_name,
-            desired_state=desired_state,
-            inventory_source=inventory_source,
-        )
-        decisions.append(decision)
+    try:
+        decisions = []
+        for device_name in device_names:
+            decision = evaluator(
+                run_id=run_id,
+                site=site,
+                device_name=device_name,
+                desired_state=desired_state,
+                inventory_source=inventory_source,
+            )
+            decisions.append(decision)
+    except Exception as e:
+        return _blocked(f"Intent evaluation failed with error: {e}")
 
     blocked_decisions = [d for d in decisions if d.decision == PlanDecisionType.BLOCKED]
     if blocked_decisions:

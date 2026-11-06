@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 from enum import Enum
-from typing import Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .changes import PortSpec, VlanSpec
+if TYPE_CHECKING:
+    from .changes import PortSpec, VlanSpec
 from .common import ArtifactMeta, ScopeRef
 from .enums import (
     AllowedVlansMode,
