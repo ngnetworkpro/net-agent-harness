@@ -50,3 +50,9 @@ pythonpath = ["src"]
 dev = [
     "types-pyyaml>=6.0.12.20260518",
 ]
+
+[tool.mypy]
+files = ["src"]
+python_version = "3.11"
+warn_unused_configs = true
+

@@ -6,7 +6,7 @@ from ..models.changes import DeviceChange
 def _validate_mist_constraints(changes: list[DeviceChange]) -> list[str]:
     errors = []
     for dc in changes:
-        if dc.changes:
+        if dc.changes and hasattr(dc.changes, "vlans_to_create"):
             for vlan in dc.changes.vlans_to_create:
                 if not vlan.name:
                     errors.append(

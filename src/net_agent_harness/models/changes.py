@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from .artifacts import PortSpec, RoutingRenderPayload, StaticRouteOp, VlanSpec
 from .common import ArtifactMeta, ScopeRef
 from .enums import (
     ChangeRisk,
@@ -119,9 +122,9 @@ class RollbackStep(BaseModel):
 
     model_config = {"extra": "forbid"}
     order: int = Field(
-        description="Execution order, 1-indexed. Dependents first (interface → SVI → VLAN)."
+        description="Execution order, 1-indexed. Dependents first (static route → interface → SVI → VLAN)."
     )
-    object_type: Literal["vlan", "svi", "interface"] = Field(
+    object_type: Literal["vlan", "svi", "interface", "static_route", "route"] = Field(
         description="Object type this step reverses"
     )
     operation: str = Field(
@@ -152,21 +155,6 @@ class RollbackPlan(BaseModel):
         default_factory=list,
         description="Operation-specific rollback steps generated from the forward diff",
     )
-
-
-class VlanSpec(BaseModel):
-    model_config = {"extra": "forbid"}
-    id: int = Field(description="VLAN ID", ge=1, le=4094)
-    name: str = Field(default="", description="VLAN name, empty if not specified")
-
-
-class PortSpec(BaseModel):
-    model_config = {"extra": "forbid"}
-    interface: str = Field(description="Interface name, e.g., 'ge-0/0/1'")
-    vlan_id: int = Field(default=1, description="VLAN ID to assign", ge=1, le=4094)
-    mode: SwitchportMode = Field(description="'access' or 'trunk'")
-    native_vlan: int | None = None
-    allowed_vlans: list[int] = Field(default_factory=list)
 
 
 class VlanChangeOperation(BaseModel):
@@ -218,7 +206,11 @@ class VlanChange(BaseModel):
         
         if "operations" in data:
             return data
-            
+
+        legacy_keys = {"vlans_to_create", "vlans_to_remove", "ports_to_update"}
+        if not any(k in data for k in legacy_keys):
+            return data
+
         operations = []
         # Convert legacy fields
         for v in data.get("vlans_to_create", []):
@@ -301,7 +293,52 @@ class DeviceChange(BaseModel):
     model_config = {"extra": "forbid"}
     device: str = Field(description="Hostname of the target device")
     domain: NetworkDomain = Field(description="Network domain: vlan, acl, routing, etc.")
-    changes: VlanChange = Field(description="Typed change payload for the domain")
+    changes: VlanChange | Any = Field(
+        description="Typed change payload for the domain"
+    )
+
+    @model_validator(mode="after")
+    def _validate_diff_payload(self) -> DeviceChange:
+        if self.domain == NetworkDomain.VLAN:
+            if isinstance(self.changes, dict):
+                self.changes = VlanChange.model_validate(self.changes)
+            elif not isinstance(self.changes, VlanChange):
+                raise ValueError(
+                    f"Invalid changes for VLAN domain on device '{self.device}': "
+                    f"expected VlanChange, got {type(self.changes).__name__}."
+                )
+            if not isinstance(self.changes.operations, list):
+                raise ValueError(
+                    f"Malformed diff container for device '{self.device}': operations must be a list."
+                )
+            for i, op in enumerate(self.changes.operations):
+                if not isinstance(op, (VlanChangeOperation, SviChangeOperation, InterfaceChangeOperation)):
+                    # Preserve Pydantic's conversion of invalid model values to ValidationError.
+                    raise ValueError(  # noqa: TRY004
+                        f"Malformed diff entry at index {i} for device '{self.device}': "
+                        f"expected ChangeOperation, got {type(op).__name__}."
+                    )
+        elif self.domain == NetworkDomain.ROUTING:
+            if isinstance(self.changes, (int, str, bool, float)) or self.changes is None:
+                raise ValueError(
+                    f"Invalid changes for routing domain on device '{self.device}': "
+                    f"expected routing payload or operations, got {type(self.changes).__name__}."
+                )
+            if isinstance(self.changes, list):
+                for i, op in enumerate(self.changes):
+                    if not isinstance(op, (StaticRouteOp, dict)):
+                        # Preserve Pydantic's conversion of invalid model values to ValidationError.
+                        raise ValueError(  # noqa: TRY004
+                            f"Malformed routing diff entry at index {i} for device '{self.device}': "
+                            f"expected StaticRouteOp or dict, got {type(op).__name__}."
+                        )
+            elif isinstance(self.changes, (RoutingRenderPayload, StaticRouteOp, dict)):
+                pass
+            else:
+                raise ValueError(
+                    f"DeviceChange for domain ROUTING must have StaticRouteOp list, dict, or RoutingRenderPayload, got {type(self.changes).__name__}."
+                )
+        return self
 
 
 class VlanDiff(BaseModel):
@@ -440,3 +477,42 @@ class ChangeRequest(BaseModel):
         default=None,
         description="Structured no_op/apply/blocked decision carried through from the planner.",
     )
+    routing_payload: RoutingRenderPayload | None = Field(
+        default=None,
+        description="Optional routing render payload containing static route operations.",
+    )
+
+
+__all__ = [
+    "ChangeOperation",
+    "ChangeRequest",
+    "ChangeRequestDependency",
+    "ChangeRisk",
+    "DesiredStateOperation",
+    "DeviceChange",
+    "DeviceVendor",
+    "InterfaceAttributes",
+    "InterfaceChangeOperation",
+    "InterfaceDesiredStateOperation",
+    "NetworkDomain",
+    "PlanDecision",
+    "PlanDecisionType",
+    "PlannedChange",
+    "PortSpec",
+    "RequestedChange",
+    "ResolvedTarget",
+    "RollbackPlan",
+    "RollbackStep",
+    "RoutingRenderPayload",
+    "StaticRouteOp",
+    "SviAttributes",
+    "SviChangeOperation",
+    "SwitchportMode",
+    "TargetScope",
+    "VlanAttributes",
+    "VlanChange",
+    "VlanChangeOperation",
+    "VlanDesiredStateOperation",
+    "VlanDiff",
+    "VlanSpec",
+]
