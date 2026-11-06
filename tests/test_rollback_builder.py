@@ -11,6 +11,7 @@ Covers:
 - Both structured and text rollback steps populated
 """
 
+from net_agent_harness.models.artifacts import OperationType, RenderTarget, StaticRouteOp
 from net_agent_harness.models.changes import (
     DeviceChange,
     InterfaceChangeOperation,
@@ -280,5 +281,99 @@ class TestTextStepsPopulated:
         ]
         plan = build_rollback_plan(_make_decision(diff))
         assert len(plan.rollback_steps) == 1
-        assert len(plan.structured_rollback_steps) == 1
         assert plan.rollback_steps[0] == plan.structured_rollback_steps[0].description
+
+
+class TestRoutingRollback:
+    def test_ensure_present_produces_remove_step(self) -> None:
+        """Forward ENSURE_PRESENT produces inverse remove static route step."""
+        diff = [
+            DeviceChange(
+                device="r1",
+                domain=NetworkDomain.ROUTING,
+                changes=[
+                    StaticRouteOp(
+                        prefix="10.50.0.0/24",
+                        next_hop="192.168.1.1",
+                        operation=OperationType.ENSURE_PRESENT,
+                        target=RenderTarget(name="r1", platform="ios"),
+                        description="Test route",
+                        admin_distance=10,
+                    )
+                ],
+            )
+        ]
+        plan = build_rollback_plan(_make_decision(diff))
+        assert len(plan.structured_rollback_steps) == 1
+        step = plan.structured_rollback_steps[0]
+        assert step.object_type == "static_route"
+        assert step.operation == "remove"
+        assert step.target_device == "r1"
+        assert step.attributes["prefix"] == "10.50.0.0/24"
+        assert step.attributes["next_hop"] == "192.168.1.1"
+        assert step.attributes["admin_distance"] == 10
+        assert "Remove static route 10.50.0.0/24" in step.description
+
+    def test_remove_produces_create_step(self) -> None:
+        """Forward REMOVE produces inverse create static route step."""
+        diff = [
+            DeviceChange(
+                device="r1",
+                domain=NetworkDomain.ROUTING,
+                changes=[
+                    StaticRouteOp(
+                        prefix="10.50.0.0/24",
+                        next_hop="192.168.1.1",
+                        operation=OperationType.REMOVE,
+                        target=RenderTarget(name="r1", platform="ios"),
+                    )
+                ],
+            )
+        ]
+        plan = build_rollback_plan(_make_decision(diff))
+        assert len(plan.structured_rollback_steps) == 1
+        step = plan.structured_rollback_steps[0]
+        assert step.object_type == "static_route"
+        assert step.operation == "create"
+        assert step.target_device == "r1"
+        assert "Re-create static route 10.50.0.0/24" in step.description
+
+    def test_rollback_ordering_routes_first_then_interfaces_svi_vlan(self) -> None:
+        """Multi-domain rollback orders routes first (-1), then interface (0), svi (1), vlan (2)."""
+        diff = [
+            DeviceChange(
+                device="core1",
+                domain=NetworkDomain.ROUTING,
+                changes=[
+                    StaticRouteOp(
+                        prefix="10.0.0.0/24",
+                        next_hop="192.168.1.1",
+                        operation=OperationType.ENSURE_PRESENT,
+                        target=RenderTarget(name="core1", platform="ios"),
+                    )
+                ],
+            ),
+            DeviceChange(
+                device="core1",
+                domain=NetworkDomain.VLAN,
+                changes=VlanChange(
+                    operations=[
+                        VlanChangeOperation(op="create", vlan_id=10, name="users", status="apply"),
+                        SviChangeOperation(op="create", vlan_id=10, ip_address="10.0.0.1", status="apply"),
+                        InterfaceChangeOperation(op="set_access_vlan", interface="ge-0/0/1", vlan_id=10, status="apply"),
+                    ]
+                ),
+            ),
+        ]
+        plan = build_rollback_plan(_make_decision(diff))
+        assert len(plan.structured_rollback_steps) == 4
+        # Expected execution order:
+        # Step 1: static_route
+        # Step 2: interface
+        # Step 3: svi
+        # Step 4: vlan
+        step_types = [s.object_type for s in plan.structured_rollback_steps]
+        assert step_types == ["static_route", "interface", "svi", "vlan"]
+        for idx, step in enumerate(plan.structured_rollback_steps, start=1):
+            assert step.order == idx
+

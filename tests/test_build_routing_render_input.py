@@ -426,3 +426,145 @@ def test_build_routing_render_rejects_whitespace_platform() -> None:
     with pytest.raises(ValueError, match="missing platform in resolved_targets"):
         build_routing_render_input(cr)
 
+
+def test_build_routing_render_rejects_none_change_request() -> None:
+    """build_routing_render_input rejects None change_request with Render rejected prefix."""
+    with pytest.raises(ValueError, match="^Render rejected: change_request is required"):
+        build_routing_render_input(None)  # type: ignore[arg-type]
+
+
+def test_build_routing_render_rejects_non_apply_decision_with_populated_diff() -> None:
+    """Non-apply decision (e.g. NO_OP) with a populated diff is rejected."""
+    decision = PlanDecision(
+        decision=PlanDecisionType.NO_OP,
+        reason="Already exists",
+        diff=[
+            DeviceChange(
+                device="r1",
+                domain=NetworkDomain.ROUTING,
+                changes=[
+                    StaticRouteOp(
+                        prefix="10.0.0.0/24",
+                        next_hop="192.168.1.1",
+                        operation=OperationType.ENSURE_PRESENT,
+                        target=RenderTarget(name="r1", platform="ios"),
+                    )
+                ],
+            )
+        ],
+    )
+    cr = _base_routing_change_request(plan_decision=decision, routing_payload=None)
+    with pytest.raises(ValueError, match="Render rejected: plan decision is 'no_op', expected 'apply'."):
+        build_routing_render_input(cr)
+
+
+def test_build_routing_render_rejects_non_apply_op_status_in_routing_payload() -> None:
+    """Operation with status!='apply' inside routing_payload is rejected."""
+    class NonApplyOp:
+        prefix = "10.10.0.0/24"
+        next_hop = "192.168.1.1"
+        operation = OperationType.ENSURE_PRESENT
+        status = "skip"
+        target = RenderTarget(name="r1", platform="ios")
+
+    payload = RoutingRenderPayload(route_ops=[])
+    payload.route_ops = [NonApplyOp()]  # type: ignore[list-item]
+
+    decision = PlanDecision(
+        decision=PlanDecisionType.APPLY,
+        reason="Apply plan",
+        diff=[],
+    )
+    cr = _base_routing_change_request(plan_decision=decision, routing_payload=payload)
+    with pytest.raises(ValueError, match="Render rejected: route operation for prefix '10.10.0.0/24' has non-apply status 'skip'"):
+        build_routing_render_input(cr)
+
+
+def test_build_routing_render_rejects_non_apply_op_status_in_diff() -> None:
+    """Operation with status!='apply' inside diff raw ops is rejected."""
+    decision = PlanDecision(
+        decision=PlanDecisionType.APPLY,
+        reason="Apply plan",
+        diff=[
+            DeviceChange(
+                device="r1",
+                domain=NetworkDomain.ROUTING,
+                changes=[
+                    {
+                        "prefix": "10.20.0.0/24",
+                        "next_hop": "192.168.1.1",
+                        "operation": "ensure_present",
+                        "status": "blocked",
+                    }
+                ],
+            )
+        ],
+    )
+    cr = _base_routing_change_request(plan_decision=decision, routing_payload=None)
+    with pytest.raises(ValueError, match="Render rejected: route operation for prefix '10.20.0.0/24' has non-apply status 'blocked'"):
+        build_routing_render_input(cr)
+
+
+def test_build_routing_render_input_deterministic_order() -> None:
+    """route_ops in output RenderRequest are sorted deterministically."""
+    decision = PlanDecision(
+        decision=PlanDecisionType.APPLY,
+        reason="Apply multiple routes",
+        diff=[
+            DeviceChange(
+                device="r1",
+                domain=NetworkDomain.ROUTING,
+                changes=[
+                    StaticRouteOp(
+                        prefix="10.80.0.0/24",
+                        next_hop="192.168.1.1",
+                        operation=OperationType.ENSURE_PRESENT,
+                        target=RenderTarget(name="r1", platform="ios"),
+                    ),
+                    StaticRouteOp(
+                        prefix="10.10.0.0/24",
+                        next_hop="192.168.1.1",
+                        operation=OperationType.ENSURE_PRESENT,
+                        target=RenderTarget(name="r1", platform="ios"),
+                    ),
+                    StaticRouteOp(
+                        prefix="10.50.0.0/24",
+                        next_hop="192.168.1.1",
+                        operation=OperationType.ENSURE_PRESENT,
+                        target=RenderTarget(name="r1", platform="ios"),
+                    ),
+                ],
+            )
+        ],
+    )
+    cr = _base_routing_change_request(plan_decision=decision, routing_payload=None)
+    result = build_routing_render_input(cr)
+    assert isinstance(result.payload, RoutingRenderPayload)
+    prefixes = [op.prefix for op in result.payload.route_ops]
+    assert prefixes == ["10.10.0.0/24", "10.50.0.0/24", "10.80.0.0/24"]
+
+
+def test_build_routing_render_error_prefix_uniformity() -> None:
+    """All rejection errors in build_routing_render_input start with 'Render rejected: '."""
+    # 1. None change_request
+    try:
+        build_routing_render_input(None)  # type: ignore[arg-type]
+    except ValueError as e:
+        assert str(e).startswith("Render rejected: ")
+
+    # 2. None plan_decision
+    cr_no_plan = _base_routing_change_request(plan_decision=None)
+    try:
+        build_routing_render_input(cr_no_plan)
+    except ValueError as e:
+        assert str(e).startswith("Render rejected: ")
+
+    # 3. Non-apply plan decision
+    decision_blocked = PlanDecision(decision=PlanDecisionType.BLOCKED, reason="Blocked", diff=[])
+    cr_blocked = _base_routing_change_request(plan_decision=decision_blocked)
+    try:
+        build_routing_render_input(cr_blocked)
+    except ValueError as e:
+        assert str(e).startswith("Render rejected: ")
+
+

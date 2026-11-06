@@ -119,8 +119,95 @@ def test_vlan_render_payload_has_ops_and_describe_ops_with_operations():
     ]
 
 
+
 def test_vlan_render_payload_has_ops_and_describe_ops_without_operations():
     payload = VlanRenderPayload()
 
     assert payload.has_ops() is False
     assert payload.describe_ops() == []
+
+
+def test_vlan_render_input_runtime_type_hints() -> None:
+    """VlanRenderInput field types resolve via get_type_hints at runtime without NameError."""
+    import typing
+    from net_agent_harness.models.artifacts import PortSpec, VlanRenderInput, VlanSpec
+
+    hints = typing.get_type_hints(VlanRenderInput)
+    assert hints["vlans_to_create"] == list[VlanSpec]
+    assert hints["ports_to_update"] == list[PortSpec]
+
+
+def test_change_request_runtime_type_hints() -> None:
+    """ChangeRequest field types resolve via get_type_hints at runtime without NameError."""
+    import typing
+    from net_agent_harness.models.artifacts import RoutingRenderPayload
+    from net_agent_harness.models.changes import ChangeRequest
+
+    hints = typing.get_type_hints(ChangeRequest)
+    assert hints["routing_payload"] == (RoutingRenderPayload | None)
+
+
+def test_artifacts_all_contains_render_models() -> None:
+    """artifacts module exports key models via __all__."""
+    import net_agent_harness.models.artifacts as artifacts_mod
+
+    assert hasattr(artifacts_mod, "__all__")
+    assert "VlanRenderInput" in artifacts_mod.__all__
+    assert "VlanSpec" in artifacts_mod.__all__
+    assert "PortSpec" in artifacts_mod.__all__
+    assert "RoutingRenderPayload" in artifacts_mod.__all__
+    assert "StaticRouteOp" in artifacts_mod.__all__
+
+
+def test_device_change_typed_vlan_validation() -> None:
+    """DeviceChange enforces typed validation for VLAN domain and rejects primitives."""
+    from net_agent_harness.models.changes import DeviceChange, VlanChange
+
+    # 1. Reject int
+    with pytest.raises(ValidationError):
+        DeviceChange(device="sw1", domain=NetworkDomain.VLAN, changes=123)
+
+    # 2. Reject string
+    with pytest.raises(ValidationError):
+        DeviceChange(device="sw1", domain=NetworkDomain.VLAN, changes="malformed")
+
+    # 3. Valid VlanChange passes
+    dc = DeviceChange(device="sw1", domain=NetworkDomain.VLAN, changes=VlanChange(operations=[]))
+    assert isinstance(dc.changes, VlanChange)
+
+
+def test_device_change_typed_routing_validation() -> None:
+    """DeviceChange enforces typed validation for ROUTING domain and rejects malformed entries."""
+    from net_agent_harness.models.artifacts import OperationType, RenderTarget, StaticRouteOp
+    from net_agent_harness.models.changes import DeviceChange
+
+    # 1. Reject primitive int
+    with pytest.raises(ValidationError):
+        DeviceChange(device="r1", domain=NetworkDomain.ROUTING, changes=123)
+
+    # 2. Reject None
+    with pytest.raises(ValidationError):
+        DeviceChange(device="r1", domain=NetworkDomain.ROUTING, changes=None)
+
+    # 3. Reject primitive elements in list
+    with pytest.raises(ValidationError):
+        DeviceChange(device="r1", domain=NetworkDomain.ROUTING, changes=[123])
+
+    # 4. Valid StaticRouteOp list passes
+    op = StaticRouteOp(
+        prefix="10.0.0.0/24",
+        next_hop="192.168.1.1",
+        operation=OperationType.ENSURE_PRESENT,
+        target=RenderTarget(name="r1", platform="ios"),
+    )
+    dc = DeviceChange(device="r1", domain=NetworkDomain.ROUTING, changes=[op])
+    assert len(dc.changes) == 1
+
+
+def test_vlan_change_rejects_unknown_keys() -> None:
+    """VlanChange extra='forbid' is not bypassed by unknown keys."""
+    from net_agent_harness.models.changes import VlanChange
+
+    with pytest.raises(ValidationError):
+        VlanChange.model_validate({"bogus_key": 999})
+

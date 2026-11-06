@@ -12,6 +12,7 @@ are excluded since they don't change device state.
 
 from __future__ import annotations
 
+from ..models.artifacts import OperationType, StaticRouteOp
 from ..models.changes import (
     ChangeOperation,
     InterfaceChangeOperation,
@@ -21,10 +22,14 @@ from ..models.changes import (
     SviChangeOperation,
     VlanChangeOperation,
 )
+from ..models.enums import NetworkDomain
 
 # Reverse dependency priority: lower number = undo first.
-# Interfaces depend on SVIs and VLANs, so they are removed first.
+# Static routes depend on interfaces/SVIs/VLANs, so they are undone first (-1).
+# Interfaces depend on SVIs and VLANs, so they are removed first (0).
 _OBJECT_TYPE_PRIORITY: dict[str, int] = {
+    "static_route": -1,
+    "route": -1,
     "interface": 0,
     "svi": 1,
     "vlan": 2,
@@ -38,6 +43,12 @@ _INVERSE_OP: dict[tuple[str, str], str] = {
     ("svi", "remove"): "create",
     ("interface", "set_access_vlan"): "reset_access_vlan",
     ("interface", "set_trunk"): "reset_trunk",
+    ("static_route", "create"): "remove",
+    ("static_route", "remove"): "create",
+    ("static_route", "ensure_present"): "remove",
+    ("route", "create"): "remove",
+    ("route", "remove"): "create",
+    ("route", "ensure_present"): "remove",
 }
 
 
@@ -120,8 +131,49 @@ def build_rollback_plan(plan_decision: PlanDecision) -> RollbackPlan:
 
     for device_change in plan_decision.diff:
         device_name = device_change.device
-        for op in device_change.changes.operations:
-            if op.status != "apply":
+        if device_change.domain == NetworkDomain.ROUTING:
+            route_ops: list[StaticRouteOp] = []
+            if isinstance(device_change.changes, list):
+                route_ops = [op for op in device_change.changes if isinstance(op, StaticRouteOp)]
+            elif hasattr(device_change.changes, "route_ops") and getattr(device_change.changes, "route_ops") is not None:
+                route_ops = getattr(device_change.changes, "route_ops")
+            elif isinstance(device_change.changes, StaticRouteOp):
+                route_ops = [device_change.changes]
+
+            for op in route_ops:
+                if op.operation == OperationType.ENSURE_PRESENT:
+                    route_inverse_op = "remove"
+                    desc = f"Remove static route {op.prefix} via {op.next_hop} from {device_name}"
+                elif op.operation == OperationType.REMOVE:
+                    route_inverse_op = "create"
+                    desc = f"Re-create static route {op.prefix} via {op.next_hop} on {device_name}"
+                else:
+                    continue
+
+                priority = _OBJECT_TYPE_PRIORITY.get("static_route", -1)
+                attrs: dict[str, object] = {
+                    "prefix": op.prefix,
+                    "next_hop": op.next_hop,
+                }
+                if op.admin_distance is not None:
+                    attrs["admin_distance"] = op.admin_distance
+                if op.description:
+                    attrs["description"] = op.description
+
+                step = RollbackStep(
+                    order=0,
+                    object_type="static_route",
+                    operation=route_inverse_op,
+                    target_device=device_name,
+                    attributes=attrs,
+                    description=desc,
+                )
+                raw_steps.append((priority, step))
+            continue
+
+        operations = getattr(device_change.changes, "operations", [])
+        for op in operations:
+            if getattr(op, "status", None) != "apply":
                 continue
 
             inverse_op = _INVERSE_OP.get((op.change_type, op.op))
@@ -147,8 +199,8 @@ def build_rollback_plan(plan_decision: PlanDecision) -> RollbackPlan:
             structured_rollback_steps=[],
         )
 
-    # Sort by priority (interface first → SVI → VLAN) for reverse dependency order
-    raw_steps.sort(key=lambda pair: pair[0])
+    # Sort by priority (static route first → interface → SVI → VLAN) with deterministic tie-breaking
+    raw_steps.sort(key=lambda pair: (pair[0], pair[1].target_device, pair[1].description))
 
     # Assign 1-indexed order
     structured_steps: list[RollbackStep] = []

@@ -300,3 +300,25 @@ def test_build_render_sets_allowed_vlans_mode_for_trunk_and_access_ports():
     assert trunk_all_op.allowed_vlans == []
     assert trunk_all_op.allowed_vlans_mode == AllowedVlansMode.ALL
 
+
+def test_validate_platform_constraints_mist_safe_on_routing() -> None:
+    """validate_platform_constraints('mist', ...) handles routing DeviceChange without AttributeError."""
+    from net_agent_harness.models.artifacts import OperationType, RenderTarget, StaticRouteOp
+    from net_agent_harness.orchestration.platform_constraints import validate_platform_constraints
+
+    routing_change = DeviceChange(
+        device="r1",
+        domain=NetworkDomain.ROUTING,
+        changes=[
+            StaticRouteOp(
+                prefix="10.0.0.0/24",
+                next_hop="192.168.1.1",
+                operation=OperationType.ENSURE_PRESENT,
+                target=RenderTarget(name="r1", platform="mist"),
+            )
+        ],
+    )
+    errors = validate_platform_constraints("mist", [routing_change])
+    assert errors == []
+
+

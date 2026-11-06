@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
-if TYPE_CHECKING:
-    from .changes import PortSpec, VlanSpec
 from .common import ArtifactMeta, ScopeRef
 from .enums import (
     AllowedVlansMode,
@@ -74,6 +72,21 @@ class ConfigRender(BaseModel):
     summary: str
     snippets: list[ConfigSnippet] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+
+
+class VlanSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: int = Field(description="VLAN ID", ge=1, le=4094)
+    name: str = Field(default="", description="VLAN name, empty if not specified")
+
+
+class PortSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    interface: str = Field(description="Interface name, e.g., 'ge-0/0/1'")
+    vlan_id: int = Field(default=1, description="VLAN ID to assign", ge=1, le=4094)
+    mode: SwitchportMode = Field(description="'access' or 'trunk'")
+    native_vlan: int | None = None
+    allowed_vlans: list[int] = Field(default_factory=list)
 
 
 class VlanRenderInput(BaseModel):
@@ -452,3 +465,45 @@ class RenderAcceptanceResult(BaseModel):
     passed: bool
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+
+
+__all__ = [
+    "AllowedVlansMode",
+    "AnswerArtifact",
+    "ApiRequestPayload",
+    "Capability",
+    "ConfigRender",
+    "ConfigRenderOutput",
+    "ConfigSnippet",
+    "ExecutionPlan",
+    "ExecutionResult",
+    "Finding",
+    "IPAMQueryResult",
+    "IncidentSummaryArtifact",
+    "InventoryQueryResult",
+    "NetworkDomain",
+    "OperationType",
+    "PortSpec",
+    "QueryFinding",
+    "ReadOnlyAnswer",
+    "RenderAcceptanceResult",
+    "RenderBackendType",
+    "RenderPayload",
+    "RenderRequest",
+    "RenderRole",
+    "RenderTarget",
+    "RoutingRenderPayload",
+    "StaticRouteOp",
+    "SviRenderOp",
+    "SwitchportMode",
+    "TopologyQueryResult",
+    "ValidationCheckResult",
+    "ValidationReport",
+    "ValidationStatus",
+    "VlanInterfaceRenderOp",
+    "VlanRenderInput",
+    "VlanRenderOp",
+    "VlanRenderPayload",
+    "VlanSpec",
+]
+
