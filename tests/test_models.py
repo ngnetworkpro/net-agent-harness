@@ -130,6 +130,7 @@ def test_vlan_render_payload_has_ops_and_describe_ops_without_operations():
 def test_vlan_render_input_runtime_type_hints() -> None:
     """VlanRenderInput field types resolve via get_type_hints at runtime without NameError."""
     import typing
+
     from net_agent_harness.models.artifacts import PortSpec, VlanRenderInput, VlanSpec
 
     hints = typing.get_type_hints(VlanRenderInput)
@@ -140,6 +141,7 @@ def test_vlan_render_input_runtime_type_hints() -> None:
 def test_change_request_runtime_type_hints() -> None:
     """ChangeRequest field types resolve via get_type_hints at runtime without NameError."""
     import typing
+
     from net_agent_harness.models.artifacts import RoutingRenderPayload
     from net_agent_harness.models.changes import ChangeRequest
 

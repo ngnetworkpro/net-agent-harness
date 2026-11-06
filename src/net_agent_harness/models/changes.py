@@ -313,7 +313,8 @@ class DeviceChange(BaseModel):
                 )
             for i, op in enumerate(self.changes.operations):
                 if not isinstance(op, (VlanChangeOperation, SviChangeOperation, InterfaceChangeOperation)):
-                    raise ValueError(
+                    # Preserve Pydantic's conversion of invalid model values to ValidationError.
+                    raise ValueError(  # noqa: TRY004
                         f"Malformed diff entry at index {i} for device '{self.device}': "
                         f"expected ChangeOperation, got {type(op).__name__}."
                     )
@@ -326,7 +327,8 @@ class DeviceChange(BaseModel):
             if isinstance(self.changes, list):
                 for i, op in enumerate(self.changes):
                     if not isinstance(op, (StaticRouteOp, dict)):
-                        raise ValueError(
+                        # Preserve Pydantic's conversion of invalid model values to ValidationError.
+                        raise ValueError(  # noqa: TRY004
                             f"Malformed routing diff entry at index {i} for device '{self.device}': "
                             f"expected StaticRouteOp or dict, got {type(op).__name__}."
                         )
@@ -514,4 +516,3 @@ __all__ = [
     "VlanDiff",
     "VlanSpec",
 ]
-

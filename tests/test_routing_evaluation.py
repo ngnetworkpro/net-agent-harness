@@ -592,9 +592,9 @@ def test_evaluate_routing_permitted_add_operations(op_name: str) -> None:
 @pytest.mark.parametrize("op_name", ["ensure_absent", "remove", "delete"])
 def test_evaluate_routing_permitted_remove_operations(monkeypatch: pytest.MonkeyPatch, op_name: str) -> None:
     """Permitted remove static route operations on existing route resolve to APPLY with REMOVE."""
-    from net_agent_harness.models.inventory import DeviceInfo, RouteInfo
-    from net_agent_harness.models.enums import DeviceVendor
     import net_agent_harness.tools.evaluation as eval_module
+    from net_agent_harness.models.enums import DeviceVendor
+    from net_agent_harness.models.inventory import DeviceInfo, RouteInfo
 
     fake_device = DeviceInfo(
         name="sw1",
@@ -630,9 +630,9 @@ def test_evaluate_routing_permitted_remove_operations(monkeypatch: pytest.Monkey
 
 def test_evaluate_routing_desired_route_already_present_returns_no_op(monkeypatch: pytest.MonkeyPatch) -> None:
     """When desired static route already exists in authoritative current state, return NO_OP."""
-    from net_agent_harness.models.inventory import DeviceInfo, RouteInfo
-    from net_agent_harness.models.enums import DeviceVendor
     import net_agent_harness.tools.evaluation as eval_module
+    from net_agent_harness.models.enums import DeviceVendor
+    from net_agent_harness.models.inventory import DeviceInfo, RouteInfo
 
     fake_device = DeviceInfo(
         name="sw1",
@@ -669,9 +669,9 @@ def test_evaluate_routing_desired_route_already_present_returns_no_op(monkeypatc
 
 def test_evaluate_routing_remove_nonexistent_route_returns_no_op(monkeypatch: pytest.MonkeyPatch) -> None:
     """When attempting to remove a route not in authoritative state, return NO_OP."""
-    from net_agent_harness.models.inventory import DeviceInfo
-    from net_agent_harness.models.enums import DeviceVendor
     import net_agent_harness.tools.evaluation as eval_module
+    from net_agent_harness.models.enums import DeviceVendor
+    from net_agent_harness.models.inventory import DeviceInfo
 
     fake_device = DeviceInfo(
         name="sw1",
@@ -708,9 +708,9 @@ def test_evaluate_routing_remove_nonexistent_route_returns_no_op(monkeypatch: py
 
 def test_evaluate_routing_partial_diff_against_current_state(monkeypatch: pytest.MonkeyPatch) -> None:
     """When one route exists and another is new, diff contains only the new route."""
-    from net_agent_harness.models.inventory import DeviceInfo, RouteInfo
-    from net_agent_harness.models.enums import DeviceVendor
     import net_agent_harness.tools.evaluation as eval_module
+    from net_agent_harness.models.enums import DeviceVendor
+    from net_agent_harness.models.inventory import DeviceInfo, RouteInfo
 
     fake_device = DeviceInfo(
         name="sw1",

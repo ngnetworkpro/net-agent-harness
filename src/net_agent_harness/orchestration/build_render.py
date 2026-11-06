@@ -211,8 +211,8 @@ def build_routing_render_input(change_request: ChangeRequest) -> RenderRequest:
             raw_ops: list[object] = []
             if isinstance(change.changes, list):
                 raw_ops = change.changes
-            elif hasattr(change.changes, "route_ops") and getattr(change.changes, "route_ops") is not None:
-                raw_ops = getattr(change.changes, "route_ops")
+            elif hasattr(change.changes, "route_ops") and change.changes.route_ops is not None:
+                raw_ops = change.changes.route_ops
             elif isinstance(change.changes, dict):
                 if "route_ops" in change.changes and isinstance(change.changes["route_ops"], list):
                     raw_ops = change.changes["route_ops"]

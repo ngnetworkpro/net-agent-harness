@@ -135,8 +135,8 @@ def build_rollback_plan(plan_decision: PlanDecision) -> RollbackPlan:
             route_ops: list[StaticRouteOp] = []
             if isinstance(device_change.changes, list):
                 route_ops = [op for op in device_change.changes if isinstance(op, StaticRouteOp)]
-            elif hasattr(device_change.changes, "route_ops") and getattr(device_change.changes, "route_ops") is not None:
-                route_ops = getattr(device_change.changes, "route_ops")
+            elif hasattr(device_change.changes, "route_ops") and device_change.changes.route_ops is not None:
+                route_ops = device_change.changes.route_ops
             elif isinstance(device_change.changes, StaticRouteOp):
                 route_ops = [device_change.changes]
 

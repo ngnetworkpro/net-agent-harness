@@ -1,9 +1,8 @@
-from collections.abc import Callable
 import ipaddress
+from collections.abc import Callable
 from typing import Any
 
 from ..models.artifacts import OperationType, RenderTarget, StaticRouteOp
-
 from ..models.changes import (
     ChangeOperation,
     DeviceChange,
@@ -106,12 +105,15 @@ def _load_device_from_inventory(
             "vlans": [],
             "routes": [],
         }
-    elif isinstance(device_data, dict):
-        if "routes" not in device_data and "static_routes" in device_data:
-            device_data = {
-                **device_data,
-                "routes": device_data["static_routes"],
-            }
+    elif (
+        isinstance(device_data, dict)
+        and "routes" not in device_data
+        and "static_routes" in device_data
+    ):
+        device_data = {
+            **device_data,
+            "routes": device_data["static_routes"],
+        }
 
     return DeviceInfo.model_validate(device_data)
 
@@ -860,9 +862,11 @@ def _evaluate_routing_operations(
 
             # Guard: check object_type if present
             obj_type = _get_value(op, "object_type")
-            if obj_type is not None:
-                if not isinstance(obj_type, str) or obj_type.lower() not in ("static_route", "route"):
-                    return _blocked(f"Unsupported routing object_type '{obj_type}'. Only static route operations are supported.")
+            if obj_type is not None and (
+                not isinstance(obj_type, str)
+                or obj_type.lower() not in ("static_route", "route")
+            ):
+                return _blocked(f"Unsupported routing object_type '{obj_type}'. Only static route operations are supported.")
 
             # Guard: check permitted static-route operations
             raw_op_name = _get_value(op, "operation")
@@ -901,13 +905,12 @@ def _evaluate_routing_operations(
                 return _blocked(f"Invalid next_hop '{next_hop}'. Must be a valid IP address.")
             next_hop_str = str(nh_ip)
 
-            if admin_distance is not None:
-                if (
-                    isinstance(admin_distance, bool)
-                    or not isinstance(admin_distance, int)
-                    or not (1 <= admin_distance <= 255)
-                ):
-                    return _blocked(f"Invalid admin_distance '{admin_distance}'. Must be between 1 and 255.")
+            if admin_distance is not None and (
+                isinstance(admin_distance, bool)
+                or not isinstance(admin_distance, int)
+                or not (1 <= admin_distance <= 255)
+            ):
+                return _blocked(f"Invalid admin_distance '{admin_distance}'. Must be between 1 and 255.")
 
             op_type = (
                 OperationType.REMOVE
@@ -923,10 +926,15 @@ def _evaluate_routing_operations(
                 cr_nh = _get_value(cr, "next_hop")
                 if cr_pfx:
                     try:
-                        if ipaddress.ip_network(str(cr_pfx), strict=False) == net:
-                            if not cr_nh or str(ipaddress.ip_address(str(cr_nh))) == next_hop_str:
-                                route_exists = True
-                                break
+                        if (
+                            ipaddress.ip_network(str(cr_pfx), strict=False) == net
+                            and (
+                                not cr_nh
+                                or str(ipaddress.ip_address(str(cr_nh))) == next_hop_str
+                            )
+                        ):
+                            route_exists = True
+                            break
                     except (ValueError, TypeError):
                         continue
 
@@ -976,7 +984,7 @@ def _evaluate_routing_operations(
         return _apply("; ".join(reason_parts) + ".", [device_change])
     except (ValueError, TypeError) as e:
         return _blocked(f"Invalid routing operation attributes: {e}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - fail closed on unexpected routing failures
         return _blocked(f"Routing evaluation failed with error: {e}")
 
 
@@ -1027,7 +1035,7 @@ def evaluate_intent_state(
                 inventory_source=inventory_source,
             )
             decisions.append(decision)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - fail closed on unexpected evaluation failures
         return _blocked(f"Intent evaluation failed with error: {e}")
 
     blocked_decisions = [d for d in decisions if d.decision == PlanDecisionType.BLOCKED]
